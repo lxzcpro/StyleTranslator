@@ -1,0 +1,6 @@
+style_detector/checkpoints
+style_detector/dataset/__pycache__/
+style_detector/model/__pycache__/
+style_detector/notebook
+style_detector/temp
+style_detector/wandb
