@@ -31,7 +31,7 @@ class FormatReward(FormatRewardBase):
 
         Returns:
             RewardResult with score and details
-            
+
         Raises:
             KeyError: If required parameter 'generated_text' is missing
         """
@@ -39,7 +39,7 @@ class FormatReward(FormatRewardBase):
             generated_text = kwargs['generated_text']
         except KeyError as e:
             raise KeyError(f"Missing required parameter for FormatReward.calculate: {e}")
-        
+
         prompt = kwargs.get('prompt', '')
         reward_info = self.calculate_reward(generated_text, prompt)
         return RewardResult(

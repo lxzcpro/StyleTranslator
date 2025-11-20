@@ -136,7 +136,7 @@ class StyleRewardModel(StyleRewardBase):
 
         Returns:
             RewardResult with similarity score and details
-            
+
         Raises:
             KeyError: If required parameters are missing
         """
@@ -147,7 +147,7 @@ class StyleRewardModel(StyleRewardBase):
             target_lang = kwargs['target_lang']
         except KeyError as e:
             raise KeyError(f"Missing required parameter for StyleRewardModel.calculate: {e}")
-        
+
         result = self.calculate_similarity(
             source_text, target_text, source_lang, target_lang
         )
@@ -300,13 +300,13 @@ class MockStyleRewardModel(StyleRewardBase):
     def calculate(self, **kwargs) -> RewardResult:
         """
         Calculate mock style reward.
-        
+
         Args:
             **kwargs: Must contain 'source_text', 'target_text', 'source_lang', 'target_lang'
-            
+
         Returns:
             RewardResult with similarity score and details
-            
+
         Raises:
             KeyError: If required parameters are missing
         """
@@ -317,7 +317,7 @@ class MockStyleRewardModel(StyleRewardBase):
             target_lang = kwargs['target_lang']
         except KeyError as e:
             raise KeyError(f"Missing required parameter for MockStyleRewardModel.calculate: {e}")
-        
+
         result = self.calculate_similarity(
             source_text, target_text, source_lang, target_lang
         )
