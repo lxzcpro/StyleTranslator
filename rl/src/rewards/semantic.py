@@ -67,10 +67,16 @@ class CometSemanticReward(SemanticRewardBase):
 
         Returns:
             RewardResult with score and details
+            
+        Raises:
+            KeyError: If required parameters are missing
         """
-        source = kwargs['source']
-        reference = kwargs['reference']
-        hypothesis = kwargs['hypothesis']
+        try:
+            source = kwargs['source']
+            reference = kwargs['reference']
+            hypothesis = kwargs['hypothesis']
+        except KeyError as e:
+            raise KeyError(f"Missing required parameter for CometSemanticReward.calculate: {e}")
         
         scores = self.calculate_semantic_reward([source], [reference], [hypothesis])
         return RewardResult(
