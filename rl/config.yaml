@@ -17,24 +17,24 @@ training:
 # 奖励模型配置
 reward:
   # 风格奖励模型路径
-  chinese_bert_path: "path/to/chinese_bert_model"
-  english_bert_path: "path/to/english_bert_model"
+  chinese_bert_path: 'G:\ECE\ECE684_NLP\final\models\berts\chinese_style_detector_final.ckpt'
+  english_bert_path: 'G:\ECE\ECE684_NLP\final\models\berts\english_style_detector_final.ckpt'
   
   # 风格类型 (4种风格,需要更换)
-  style_types: ["formal", "casual", "technical", "literary"]
+  style_types: ["law", "literature", "news", "science"]
   
   # 奖励权重 (格式: 0.2, 语义: 0.7, 风格: 0.1)
-  format_reward_weight: 0.2
-  semantic_reward_weight: 0.7
-  style_reward_weight: 0.1
+  format_reward_weight: 1
+  semantic_reward_weight: 6
+  style_reward_weight: 4
   
   # COMET语义奖励配置
   comet_model: "wmt22-cometkiwi-da"  # COMET模型名称
-  comet_device: "auto"  # COMET模型运行设备: auto, cpu, cuda
-  comet_path: "model/models--Unbabel--wmt22-cometkiwi-da/snapshots/ckpts/checkpoints/model.ckpt"
-  
+  comet_device: "cpu"  # COMET模型运行设备: cpu, cuda
+  comet_path: 'Z:\model\models--Unbabel--wmt22-cometkiwi-da\snapshots\1ad785194e391eebc6c53e2d0776cada8f83179a\checkpoints\model.ckpt'
+
   # 模式切换
-  test_mode: true  # true: 测试模式，false: 正式模式
+  test_mode: false  # true: 测试模式，false: 正式模式
 
 # 数据配置
 data:

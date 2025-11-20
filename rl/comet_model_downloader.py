@@ -1,6 +1,6 @@
 from comet import download_model, load_from_checkpoint
 
-model_path = download_model("Unbabel/wmt22-cometkiwi-da", "./model")
+model_path = download_model("Unbabel/wmt22-cometkiwi-da", "Z:\model")
 print(model_path)
 model = load_from_checkpoint(model_path)
 

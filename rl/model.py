@@ -47,11 +47,11 @@ class StyleDetector(pl.LightningModule):
         self.criterion = nn.CrossEntropyLoss()
         
         # Metrics
-        self.train_accuracy = Accuracy(task="multiclass", num_classes=num_classes,top_k=1)
-        self.val_accuracy = Accuracy(task="multiclass", num_classes=num_classes,top_k=1)
-        self.val_f1 = F1Score(task="multiclass", num_classes=num_classes, average='macro',top_k=1)
-        self.val_precision = Precision(task="multiclass", num_classes=num_classes, average='macro',top_k=1)
-        self.val_recall = Recall(task="multiclass", num_classes=num_classes, average='macro',top_k=1)
+        self.train_accuracy = Accuracy(task="multiclass", num_classes=num_classes)
+        self.val_accuracy = Accuracy(task="multiclass", num_classes=num_classes)
+        self.val_f1 = F1Score(task="multiclass", num_classes=num_classes, average='macro')
+        self.val_precision = Precision(task="multiclass", num_classes=num_classes, average='macro')
+        self.val_recall = Recall(task="multiclass", num_classes=num_classes, average='macro')
 
         self.test_step_outputs = []
         

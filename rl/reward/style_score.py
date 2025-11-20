@@ -5,9 +5,10 @@
 
 import torch
 import torch.nn.functional as F
-from transformers import AutoTokenizer, AutoModel
+from transformers import AutoTokenizer
 from typing import Dict, List, Any, Tuple
 import numpy as np
+from style_detector.model.model import StyleDetector
 
 
 class StyleRewardModel:
@@ -28,59 +29,35 @@ class StyleRewardModel:
         self.style_types = style_types
         self.num_styles = len(style_types)
 
-        # 加载中文BERT模型
-        self.chinese_tokenizer = AutoTokenizer.from_pretrained(chinese_bert_path)
-        self.chinese_model = AutoModel.from_pretrained(chinese_bert_path)
-        self.chinese_model.to(self.device)
-        self.chinese_model.eval()
+        # 加载中文BERT模型和分词器
+        self.chinese_model = self._load_model_from_checkpoint(chinese_bert_path)
+        self.chinese_tokenizer = AutoTokenizer.from_pretrained(self.chinese_model.hparams.model_name)
 
-        # 加载英文BERT模型
-        self.english_tokenizer = AutoTokenizer.from_pretrained(english_bert_path)
-        self.english_model = AutoModel.from_pretrained(english_bert_path)
-        self.english_model.to(self.device)
-        self.english_model.eval()
-
-        # 简单的风格分类头（这里用线性层模拟）
-        self.style_classifier = torch.nn.Linear(768, self.num_styles)
+        # 加载英文BERT模型和分词器
+        self.english_model = self._load_model_from_checkpoint(english_bert_path)
+        self.english_tokenizer = AutoTokenizer.from_pretrained(self.english_model.hparams.model_name)
 
     def _get_device(self, device: str) -> str:
         """获取计算设备"""
         if device == "auto":
             return "cuda" if torch.cuda.is_available() else "cpu"
         return device
-
-    def get_text_embedding(self, text: str, language: str) -> torch.Tensor:
+        
+    def _load_model_from_checkpoint(self, checkpoint_path: str) -> StyleDetector:
         """
-        获取文本的嵌入向量
+        从checkpoint加载风格检测器模型
         
         Args:
-            text: 输入文本
-            language: 语言类型 ('chinese' 或 'english')
+            checkpoint_path: 模型checkpoint路径
             
         Returns:
-            文本嵌入向量
+            加载好的StyleDetector模型
         """
-        if language == 'chinese':
-            tokenizer = self.chinese_tokenizer
-            model = self.chinese_model
-        elif language == 'english':
-            tokenizer = self.english_tokenizer
-            model = self.english_model
-        else:
-            raise ValueError(f"Unsupported language: {language}")
-
-        # 编码文本
-        inputs = tokenizer(text, return_tensors="pt", padding=True,
-                           truncation=True, max_length=512)
-        inputs = {k: v.to(self.device) for k, v in inputs.items()}
-
-        # 获取嵌入
-        with torch.no_grad():
-            outputs = model(**inputs)
-            # 使用[CLS]token的表示作为文本嵌入
-            embeddings = outputs.last_hidden_state[:, 0, :]
-
-        return embeddings
+        # 使用StyleDetector的load_from_checkpoint方法加载模型 - 与bert_test2.py保持一致
+        model = StyleDetector.load_from_checkpoint(checkpoint_path)
+        model.eval()
+        model.to(self.device)
+        return model
 
     def predict_style_probabilities(self, text: str, language: str) -> torch.Tensor:
         """
@@ -93,23 +70,33 @@ class StyleRewardModel:
         Returns:
             风格概率分布
         """
-        embeddings = self.get_text_embedding(text, language)
+        if language == 'chinese':
+            tokenizer = self.chinese_tokenizer
+            model = self.chinese_model
+        elif language == 'english':
+            tokenizer = self.english_tokenizer
+            model = self.english_model
+        else:
+            raise ValueError(f"Unsupported language: {language}")
 
-        # 模拟风格预测（在实际应用中，这里应该是训练好的风格分类器）
+        # 编码文本
+        encoding = tokenizer(
+            text,
+            truncation=True,
+            padding='max_length',
+            max_length=512,
+            return_tensors='pt'
+        )
+        
+        input_ids = encoding['input_ids'].to(self.device)
+        attention_mask = encoding['attention_mask'].to(self.device)
+
+        # 模型推理 - 与bert_test2.py保持一致
         with torch.no_grad():
-            # 添加一些随机性来模拟不同的风格倾向
-            style_logits = self.style_classifier(embeddings)
-            # 添加基于文本特征的bias
-            if len(text) > 50:
-                style_logits[:, 0] += 0.1  # formal
-            if any(word in text.lower() for word in ['tech', 'data', 'system']):
-                style_logits[:, 2] += 0.2  # technical
-            if any(word in text.lower() for word in ['hello', 'hi', 'hey']):
-                style_logits[:, 1] += 0.15  # casual
+            logits = model(input_ids, attention_mask)
+            # probabilities = torch.softmax(logits, dim=-1).squeeze()
 
-            style_probs = F.softmax(style_logits, dim=-1)
-
-        return style_probs
+        return logits
 
     def calculate_style_similarity(self, source_text: str, target_text: str,
                                    source_lang: str, target_lang: str) -> Dict[str, Any]:
@@ -138,6 +125,18 @@ class StyleRewardModel:
         # 获取主要风格类型
         source_main_style_idx = torch.argmax(source_style_probs, dim=-1).item()
         target_main_style_idx = torch.argmax(target_style_probs, dim=-1).item()
+
+        # # 计算主要风格概率之差的绝对值
+        # source_main_prob = source_style_probs[source_main_style_idx].item()
+        # target_main_prob = target_style_probs[target_main_style_idx].item()
+        # prob_diff_abs = max(source_main_prob - target_main_prob,0)
+        #
+        # # 添加调节系数：1-（主要风格概率差的绝对值）
+        # # 当主要风格概率差异较大时，系数较小，增强区分度
+        # adjustment_coefficient = 1 - prob_diff_abs
+        #
+        # # 应用调节系数
+        # adjusted_similarity = cosine_similarity * adjustment_coefficient
 
         result = {
             'similarity_score': cosine_similarity,

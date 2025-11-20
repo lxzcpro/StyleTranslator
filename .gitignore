@@ -5,6 +5,7 @@ style_detector/notebook
 style_detector/temp
 style_detector/wandb
 style_detector/corpus/temp
+models
 style_detector/models
 
 rl/.ipynb_checkpoints
