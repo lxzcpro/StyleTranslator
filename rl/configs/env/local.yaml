@@ -1,0 +1,16 @@
+# @package _global_
+# Local development environment settings
+
+device: auto  # auto, cpu, cuda
+
+# Model paths for local development
+model_paths:
+  chinese_bert: "models/berts/chinese_style_detector_final.ckpt"
+  english_bert: "models/berts/english_style_detector_final.ckpt"
+  comet: null  # null to auto-download
+
+# Use test mode for development without actual models
+test_mode: false  # Set to true for mock models
+
+# Logging level
+log_level: INFO
