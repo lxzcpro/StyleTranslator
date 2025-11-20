@@ -1,12 +1,13 @@
 import torch
 import logging
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from comet import download_model, load_from_checkpoint
+from .base_reward import SemanticRewardBase, RewardResult
 
 logger = logging.getLogger(__name__)
 
 
-class CometSemanticReward:
+class CometSemanticReward(SemanticRewardBase):
     """
     基于COMET模型的语义奖励计算器
     使用wmt22-cometkiwi-da模型评估翻译质量
@@ -56,6 +57,45 @@ class CometSemanticReward:
             logger.error(f"加载COMET模型失败: {e}")
             logger.warning("将使用模拟的语义奖励分数")
             self.model = None
+
+    def calculate(self, source: str, reference: str, hypothesis: str) -> RewardResult:
+        """
+        Calculate semantic reward for single input (implements BaseReward interface).
+
+        Args:
+            source: Source text
+            reference: Reference translation
+            hypothesis: Generated translation
+
+        Returns:
+            RewardResult with score and details
+        """
+        scores = self.calculate_semantic_reward([source], [reference], [hypothesis])
+        return RewardResult(
+            score=scores[0],
+            details={'source': source, 'reference': reference, 'hypothesis': hypothesis}
+        )
+
+    def batch_calculate(self, batch_data: List[Dict[str, Any]]) -> List[RewardResult]:
+        """
+        Calculate rewards for a batch (implements BaseReward interface).
+
+        Args:
+            batch_data: List of dicts with 'source', 'reference', 'hypothesis' keys
+
+        Returns:
+            List of RewardResult objects
+        """
+        sources = [item['source'] for item in batch_data]
+        references = [item['reference'] for item in batch_data]
+        hypotheses = [item['hypothesis'] for item in batch_data]
+
+        scores = self.calculate_semantic_reward(sources, references, hypotheses)
+
+        return [
+            RewardResult(score=score, details=batch_data[i])
+            for i, score in enumerate(scores)
+        ]
 
     def calculate_semantic_reward(self, source_texts: List[str], reference_texts: List[str],
                                   hypothesis_texts: List[str]) -> List[float]:

@@ -9,9 +9,10 @@ from transformers import AutoTokenizer
 from typing import Dict, List, Any, Tuple
 import numpy as np
 from style_detector.model.model import StyleDetector
+from .base_reward import StyleRewardBase, RewardResult
 
 
-class StyleRewardModel:
+class StyleRewardModel(StyleRewardBase):
     """风格奖励模型"""
 
     def __init__(self, chinese_bert_path: str, english_bert_path: str,
@@ -94,9 +95,58 @@ class StyleRewardModel:
         # 模型推理 - 与bert_test2.py保持一致
         with torch.no_grad():
             logits = model(input_ids, attention_mask)
-            # probabilities = torch.softmax(logits, dim=-1).squeeze()
+            probabilities = torch.softmax(logits, dim=-1).squeeze()
 
-        return logits
+        return probabilities
+
+    def calculate(self, source_text: str, target_text: str,
+                 source_lang: str, target_lang: str) -> RewardResult:
+        """
+        Calculate style reward (implements BaseReward interface).
+
+        Args:
+            source_text: Source text
+            target_text: Target text
+            source_lang: Source language
+            target_lang: Target language
+
+        Returns:
+            RewardResult with similarity score and details
+        """
+        result = self.calculate_similarity(source_text, target_text, source_lang, target_lang)
+        return RewardResult(
+            score=result['similarity_score'],
+            details=result
+        )
+
+    def batch_calculate(self, batch_data: List[Dict[str, Any]]) -> List[RewardResult]:
+        """
+        Calculate rewards for a batch (implements BaseReward interface).
+
+        Args:
+            batch_data: List of dicts with 'source_text', 'target_text',
+                       'source_lang', 'target_lang' keys
+
+        Returns:
+            List of RewardResult objects
+        """
+        results = []
+        for item in batch_data:
+            result = self.calculate(
+                source_text=item['source_text'],
+                target_text=item['target_text'],
+                source_lang=item['source_lang'],
+                target_lang=item['target_lang']
+            )
+            results.append(result)
+        return results
+
+    def calculate_similarity(self, source_text: str, target_text: str,
+                           source_lang: str, target_lang: str) -> Dict[str, Any]:
+        """
+        Alias for calculate_style_similarity (to match base class interface).
+        """
+        return self.calculate_style_similarity(source_text, target_text, source_lang, target_lang)
 
     def calculate_style_similarity(self, source_text: str, target_text: str,
                                    source_lang: str, target_lang: str) -> Dict[str, Any]:
@@ -172,7 +222,7 @@ class StyleRewardModel:
         return results
 
 
-class MockStyleRewardModel:
+class MockStyleRewardModel(StyleRewardBase):
     """模拟风格奖励模型（用于测试）"""
 
     def __init__(self, style_types: List[str]):
@@ -201,6 +251,55 @@ class MockStyleRewardModel:
         # 归一化使其成为有效的概率分布
         style_probs = F.softmax(random_probs, dim=-1)
         return style_probs
+
+    def calculate(self, source_text: str, target_text: str,
+                 source_lang: str, target_lang: str) -> RewardResult:
+        """
+        Calculate style reward (implements BaseReward interface).
+
+        Args:
+            source_text: Source text
+            target_text: Target text
+            source_lang: Source language
+            target_lang: Target language
+
+        Returns:
+            RewardResult with similarity score and details
+        """
+        result = self.calculate_similarity(source_text, target_text, source_lang, target_lang)
+        return RewardResult(
+            score=result['similarity_score'],
+            details=result
+        )
+
+    def batch_calculate(self, batch_data: List[Dict[str, Any]]) -> List[RewardResult]:
+        """
+        Calculate rewards for a batch (implements BaseReward interface).
+
+        Args:
+            batch_data: List of dicts with 'source_text', 'target_text',
+                       'source_lang', 'target_lang' keys
+
+        Returns:
+            List of RewardResult objects
+        """
+        results = []
+        for item in batch_data:
+            result = self.calculate(
+                source_text=item['source_text'],
+                target_text=item['target_text'],
+                source_lang=item['source_lang'],
+                target_lang=item['target_lang']
+            )
+            results.append(result)
+        return results
+
+    def calculate_similarity(self, source_text: str, target_text: str,
+                           source_lang: str, target_lang: str) -> Dict[str, Any]:
+        """
+        Alias for calculate_style_similarity (to match base class interface).
+        """
+        return self.calculate_style_similarity(source_text, target_text, source_lang, target_lang)
 
     def calculate_style_similarity(self, source_text: str, target_text: str,
                                    source_lang: str, target_lang: str) -> Dict[str, Any]:

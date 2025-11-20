@@ -4,10 +4,11 @@
 """
 
 import re
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, List
+from .base_reward import FormatRewardBase, RewardResult
 
 
-class FormatReward:
+class FormatReward(FormatRewardBase):
     """格式奖励计算器"""
 
     def __init__(self):
@@ -15,14 +16,50 @@ class FormatReward:
         self.think_pattern = re.compile(r'<think>(.*?)</think>', re.DOTALL)
         self.translate_pattern = re.compile(r'<translate>(.*?)</translate>', re.DOTALL)
 
+    def calculate(self, generated_text: str, prompt: str = "") -> RewardResult:
+        """
+        Calculate format reward (implements BaseReward interface).
+
+        Args:
+            generated_text: Generated text from model
+            prompt: Input prompt (optional)
+
+        Returns:
+            RewardResult with score and details
+        """
+        reward_info = self.calculate_reward(generated_text, prompt)
+        return RewardResult(
+            score=reward_info['total_reward'],
+            details=reward_info
+        )
+
+    def batch_calculate(self, batch_data: List[Dict[str, Any]]) -> List[RewardResult]:
+        """
+        Calculate rewards for a batch (implements BaseReward interface).
+
+        Args:
+            batch_data: List of dicts with 'generated_text' and 'prompt' keys
+
+        Returns:
+            List of RewardResult objects
+        """
+        results = []
+        for item in batch_data:
+            result = self.calculate(
+                generated_text=item.get('generated_text', ''),
+                prompt=item.get('prompt', '')
+            )
+            results.append(result)
+        return results
+
     def calculate_reward(self, generated_text: str, prompt: str) -> Dict[str, Any]:
         """
         计算格式奖励
-        
+
         Args:
             generated_text: 模型生成的文本
             prompt: 输入的prompt
-            
+
         Returns:
             Dict包含奖励分数和详细信息
         """
