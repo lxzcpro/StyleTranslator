@@ -158,19 +158,6 @@ Source Text → LLM → Translation
       GRPO Optimization
 ```
 
-## Citation
-
-If you use this code, please cite:
-
-```bibtex
-@software{styletranslator2024,
-  title = {StyleTranslator: Neural Machine Translation with Style Awareness},
-  year = {2024},
-  author = {Your Name},
-  url = {https://github.com/lxzcpro/StyleTranslator}
-}
-```
-
 ## License
 
 MIT License - see LICENSE file for details.
