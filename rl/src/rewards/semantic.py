@@ -58,18 +58,20 @@ class CometSemanticReward(SemanticRewardBase):
             logger.warning("将使用模拟的语义奖励分数")
             self.model = None
 
-    def calculate(self, source: str, reference: str, hypothesis: str) -> RewardResult:
+    def calculate(self, **kwargs) -> RewardResult:
         """
         Calculate semantic reward for single input (implements BaseReward interface).
 
         Args:
-            source: Source text
-            reference: Reference translation
-            hypothesis: Generated translation
+            **kwargs: Must contain 'source', 'reference', 'hypothesis'
 
         Returns:
             RewardResult with score and details
         """
+        source = kwargs['source']
+        reference = kwargs['reference']
+        hypothesis = kwargs['hypothesis']
+        
         scores = self.calculate_semantic_reward([source], [reference], [hypothesis])
         return RewardResult(
             score=scores[0],

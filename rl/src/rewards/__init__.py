@@ -18,24 +18,24 @@ Usage:
     )
 """
 
-from .base_reward import (
+from .base import (
     BaseReward,
     FormatRewardBase,
     SemanticRewardBase,
     StyleRewardBase,
     RewardResult
 )
-from .format_score import FormatReward
-from .comet_score import CometSemanticReward
-from .style_score import StyleRewardModel, MockStyleRewardModel
-from .reward_manager import (
+from .format import FormatReward
+from .semantic import CometSemanticReward
+from .style import StyleRewardModel, MockStyleRewardModel
+from .manager import (
     RewardManager,
     RewardWeights,
     RewardComponents,
     RewardOutput,
     LanguageMapper
 )
-from .reward_factory import RewardFactory
+from .factory import RewardFactory
 
 __all__ = [
     # Base classes

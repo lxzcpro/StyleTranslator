@@ -22,17 +22,18 @@ class FormatReward(FormatRewardBase):
         self.think_pattern = re.compile(r'<think>(.*?)</think>', re.DOTALL)
         self.translate_pattern = re.compile(r'<translate>(.*?)</translate>', re.DOTALL)
 
-    def calculate(self, generated_text: str, prompt: str = "") -> RewardResult:
+    def calculate(self, **kwargs) -> RewardResult:
         """
         Calculate format reward (implements BaseReward interface).
 
         Args:
-            generated_text: Generated text from model
-            prompt: Input prompt (optional)
+            **kwargs: Must contain 'generated_text', optionally 'prompt'
 
         Returns:
             RewardResult with score and details
         """
+        generated_text = kwargs.get('generated_text', '')
+        prompt = kwargs.get('prompt', '')
         reward_info = self.calculate_reward(generated_text, prompt)
         return RewardResult(
             score=reward_info['total_reward'],

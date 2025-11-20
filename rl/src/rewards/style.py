@@ -127,25 +127,21 @@ class StyleRewardModel(StyleRewardBase):
 
         return probabilities
 
-    def calculate(
-        self,
-        source_text: str,
-        target_text: str,
-        source_lang: str,
-        target_lang: str
-    ) -> RewardResult:
+    def calculate(self, **kwargs) -> RewardResult:
         """
         Calculate style reward (implements BaseReward interface).
 
         Args:
-            source_text: Source text
-            target_text: Target text
-            source_lang: Source language
-            target_lang: Target language
+            **kwargs: Must contain 'source_text', 'target_text', 'source_lang', 'target_lang'
 
         Returns:
             RewardResult with similarity score and details
         """
+        source_text = kwargs['source_text']
+        target_text = kwargs['target_text']
+        source_lang = kwargs['source_lang']
+        target_lang = kwargs['target_lang']
+        
         result = self.calculate_similarity(
             source_text, target_text, source_lang, target_lang
         )
@@ -295,14 +291,21 @@ class MockStyleRewardModel(StyleRewardBase):
         style_probs = F.softmax(random_probs, dim=-1)
         return style_probs
 
-    def calculate(
-        self,
-        source_text: str,
-        target_text: str,
-        source_lang: str,
-        target_lang: str
-    ) -> RewardResult:
-        """Calculate mock style reward."""
+    def calculate(self, **kwargs) -> RewardResult:
+        """
+        Calculate mock style reward.
+        
+        Args:
+            **kwargs: Must contain 'source_text', 'target_text', 'source_lang', 'target_lang'
+            
+        Returns:
+            RewardResult with similarity score and details
+        """
+        source_text = kwargs['source_text']
+        target_text = kwargs['target_text']
+        source_lang = kwargs['source_lang']
+        target_lang = kwargs['target_lang']
+        
         result = self.calculate_similarity(
             source_text, target_text, source_lang, target_lang
         )
