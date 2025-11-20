@@ -1,6 +1,6 @@
 """
-格式奖励模块：检查LLM生成的结果是否符合prompt要求
-主要检查是否包含<think>和<translate>标签，以及内容格式
+Format reward module for validating LLM-generated translation output.
+Checks for required XML tags (<think>, <translate>) and content validity.
 """
 
 import re
@@ -9,10 +9,16 @@ from .base_reward import FormatRewardBase, RewardResult
 
 
 class FormatReward(FormatRewardBase):
-    """格式奖励计算器"""
+    """Format validation reward calculator."""
+
+    # Reward weights for different components
+    THINK_TAG_WEIGHT = 0.3
+    TRANSLATE_TAG_WEIGHT = 0.4
+    CONTENT_WEIGHT = 0.3
+    MIN_CONTENT_LENGTH = 2
 
     def __init__(self):
-        # 定义正则表达式模式
+        """Initialize format reward with regex patterns."""
         self.think_pattern = re.compile(r'<think>(.*?)</think>', re.DOTALL)
         self.translate_pattern = re.compile(r'<translate>(.*?)</translate>', re.DOTALL)
 
@@ -54,14 +60,14 @@ class FormatReward(FormatRewardBase):
 
     def calculate_reward(self, generated_text: str, prompt: str) -> Dict[str, Any]:
         """
-        计算格式奖励
+        Calculate format reward with detailed breakdown.
 
         Args:
-            generated_text: 模型生成的文本
-            prompt: 输入的prompt
+            generated_text: Generated text from model
+            prompt: Input prompt
 
         Returns:
-            Dict包含奖励分数和详细信息
+            Dict with total_reward and detailed validation results
         """
         reward_info = {
             'total_reward': 0.0,
@@ -74,30 +80,29 @@ class FormatReward(FormatRewardBase):
         }
 
         try:
-            # 检查是否包含think标签
+            # Check for think tag
             think_match = self.think_pattern.search(generated_text)
             if think_match:
                 reward_info['has_think_tag'] = True
                 reward_info['think_content'] = think_match.group(1).strip()
 
-            # 检查是否包含translate标签
+            # Check for translate tag
             translate_match = self.translate_pattern.search(generated_text)
             if translate_match:
                 reward_info['has_translate_tag'] = True
                 reward_info['translate_content'] = translate_match.group(1).strip()
 
-            # 计算基础奖励
+            # Calculate base reward
             base_reward = 0.0
             if reward_info['has_think_tag']:
-                base_reward += 0.3
+                base_reward += self.THINK_TAG_WEIGHT
             if reward_info['has_translate_tag']:
-                base_reward += 0.4
+                base_reward += self.TRANSLATE_TAG_WEIGHT
 
-            # 检查内容有效性
+            # Check content validity
             if reward_info['has_translate_tag'] and reward_info['translate_content']:
-                # 翻译内容不能太短（至少2个字符）
-                if len(reward_info['translate_content']) >= 2:
-                    base_reward += 0.3
+                if len(reward_info['translate_content']) >= self.MIN_CONTENT_LENGTH:
+                    base_reward += self.CONTENT_WEIGHT
                     reward_info['format_valid'] = True
                 else:
                     reward_info['error_message'] = 'Translation content too short'
@@ -117,13 +122,13 @@ class FormatReward(FormatRewardBase):
 
     def extract_translation(self, generated_text: str) -> str:
         """
-        从生成的文本中提取翻译内容
-        
+        Extract translation content from generated text.
+
         Args:
-            generated_text: 模型生成的文本
-            
+            generated_text: Generated text from model
+
         Returns:
-            提取的翻译内容
+            Extracted translation content or empty string
         """
         translate_match = self.translate_pattern.search(generated_text)
         if translate_match:
@@ -132,14 +137,14 @@ class FormatReward(FormatRewardBase):
 
     def batch_calculate_reward(self, generated_texts: list, prompts: list) -> list:
         """
-        批量计算格式奖励
-        
+        Calculate format rewards for a batch (legacy interface).
+
         Args:
-            generated_texts: 模型生成的文本列表
-            prompts: 输入的prompt列表
-            
+            generated_texts: List of generated texts
+            prompts: List of input prompts
+
         Returns:
-            奖励信息列表
+            List of reward info dictionaries
         """
         rewards = []
         for text, prompt in zip(generated_texts, prompts):

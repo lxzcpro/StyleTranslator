@@ -1,281 +1,330 @@
 """
-奖励管理器：整合格式奖励和风格奖励
-支持测试模式和正式模式的切换
+Improved Reward Manager with dependency injection and better separation of concerns.
 """
 import logging
-from typing import Dict, List, Any, Tuple, Optional
-import torch
+from typing import Dict, List, Any, Optional
+from dataclasses import dataclass
 import numpy as np
-from .format_score import FormatReward
-from .style_score import StyleRewardModel, MockStyleRewardModel
-from .comet_score import CometSemanticReward
+
+from .base_reward import FormatRewardBase, SemanticRewardBase, StyleRewardBase
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
+
+
+@dataclass
+class RewardWeights:
+    """Encapsulates reward weight configuration."""
+    format_weight: float = 1.0
+    semantic_weight: float = 6.0
+    style_weight: float = 4.0
+
+    def __post_init__(self):
+        """Validate weights."""
+        if self.format_weight < 0 or self.semantic_weight < 0 or self.style_weight < 0:
+            raise ValueError("All weights must be non-negative")
+
+    def normalize(self) -> 'RewardWeights':
+        """Return normalized weights that sum to 1."""
+        total = self.format_weight + self.semantic_weight + self.style_weight
+        if total == 0:
+            raise ValueError("At least one weight must be positive")
+        return RewardWeights(
+            format_weight=self.format_weight / total,
+            semantic_weight=self.semantic_weight / total,
+            style_weight=self.style_weight / total
+        )
+
+
+@dataclass
+class RewardComponents:
+    """Individual reward component scores."""
+    format_score: float
+    semantic_score: float
+    style_score: float
+
+
+@dataclass
+class RewardOutput:
+    """Complete reward output with scores and metadata."""
+    total_score: float
+    components: RewardComponents
+    details: Dict[str, Any]
+    is_valid: bool = True
+    error_message: str = ""
+
+
+class LanguageMapper:
+    """Handles language code mapping for model selection."""
+
+    DEFAULT_MAPPING = {
+        'en': 'english',
+        'zh': 'chinese',
+        'de': 'english',  # German uses English model
+        'ja': 'chinese',  # Japanese uses Chinese model
+    }
+
+    def __init__(self, custom_mapping: Optional[Dict[str, str]] = None):
+        """
+        Initialize language mapper.
+
+        Args:
+            custom_mapping: Optional custom language mapping
+        """
+        self.mapping = custom_mapping if custom_mapping else self.DEFAULT_MAPPING.copy()
+
+    def get_model_language(self, lang_code: str) -> str:
+        """
+        Get model language for a given language code.
+
+        Args:
+            lang_code: ISO 639-1 language code (e.g., 'en', 'zh')
+
+        Returns:
+            Model language identifier
+
+        Raises:
+            ValueError: If language code is not supported
+        """
+        if lang_code not in self.mapping:
+            raise ValueError(
+                f"Unsupported language: {lang_code}. "
+                f"Supported languages: {list(self.mapping.keys())}"
+            )
+        return self.mapping[lang_code]
 
 
 class RewardManager:
-    """奖励管理器，整合多种奖励机制"""
+    """
+    Improved reward manager using dependency injection.
 
-    def __init__(self, config: Dict[str, Any]):
+    This class orchestrates multiple reward calculators and combines their
+    scores according to configured weights.
+    """
+
+    # Minimum format score threshold - below this, other rewards are zeroed
+    FORMAT_THRESHOLD = 0.3
+
+    def __init__(
+        self,
+        format_reward: FormatRewardBase,
+        semantic_reward: SemanticRewardBase,
+        style_reward: StyleRewardBase,
+        weights: RewardWeights,
+        language_mapper: Optional[LanguageMapper] = None
+    ):
         """
-        初始化奖励管理器
-        
+        Initialize reward manager with injected dependencies.
+
         Args:
-            config: 配置字典（从config.yaml加载）
+            format_reward: Format validation reward calculator
+            semantic_reward: Semantic similarity reward calculator
+            style_reward: Style consistency reward calculator
+            weights: Reward weight configuration
+            language_mapper: Optional custom language mapper
         """
-        self.config = config
-        self.format_reward = FormatReward()
-
-        # 初始化语义奖励模型
-        self.semantic_reward = CometSemanticReward(
-            model_name=config['reward'].get('comet_model', 'wmt22-cometkiwi-da'),
-            model_path=config['reward'].get('comet_path', None),
-            device=config['reward'].get('comet_device', 'cpu')
-        )
-
-        # 根据测试模式选择风格奖励模型
-        if config['reward']['test_mode']:
-            self.style_reward = MockStyleRewardModel(
-                style_types=config['reward']['style_types']
-            )
-            logger.info("使用MockStyleRewardModel（测试模式）")
-        else:
-            # 使用从checkpoint加载的StyleRewardModel
-            chinese_bert_path = config['reward']['chinese_bert_path']
-            english_bert_path = config['reward']['english_bert_path']
-            style_types = config['reward']['style_types']
-            device = config['model']['device']
-
-            logger.info(f"从checkpoint加载StyleRewardModel，中文模型路径: {chinese_bert_path}")
-            logger.info(f"从checkpoint加载StyleRewardModel，英文模型路径: {english_bert_path}")
-
-            self.style_reward = StyleRewardModel(
-                chinese_bert_path=chinese_bert_path,
-                english_bert_path=english_bert_path,
-                style_types=style_types,
-                device=device
-            )
-
-        # 奖励权重（从配置文件加载）
-        self.format_weight = config['reward']['format_reward_weight']
-        self.semantic_weight = config['reward'].get('semantic_reward_weight', 0.7)
-        self.style_weight = config['reward']['style_reward_weight']
+        self.format_reward = format_reward
+        self.semantic_reward = semantic_reward
+        self.style_reward = style_reward
+        self.weights = weights
+        self.language_mapper = language_mapper or LanguageMapper()
 
         logger.info(
-            f"奖励权重配置 - 格式: {self.format_weight}, 语义: {self.semantic_weight}, 风格: {self.style_weight}")
+            f"RewardManager initialized with weights - "
+            f"Format: {weights.format_weight}, "
+            f"Semantic: {weights.semantic_weight}, "
+            f"Style: {weights.style_weight}"
+        )
 
-        # 缓存机制（用于缓存源文本的向量表示）
-        self.source_embedding_cache = {}
-
-    def calculate_total_reward(self, generated_texts: List[str],
-                               source_texts: List[str],
-                               prompts: List[str],
-                               language_pairs: List[str],
-                               reference_texts: Optional[List[str]] = None) -> Dict[str, Any]:
+    def calculate_single_reward(
+        self,
+        generated_text: str,
+        source_text: str,
+        prompt: str,
+        language_pair: str,
+        reference_text: Optional[str] = None
+    ) -> RewardOutput:
         """
-        计算总奖励（包含格式、语义、风格三种奖励）
-        
+        Calculate reward for a single generation.
+
         Args:
-            generated_texts: 生成的文本列表
-            source_texts: 源文本列表
-            prompts: 提示文本列表
-            language_pairs: 语言对列表（如 ['en-zh', 'de-en']）
-            
+            generated_text: Generated text from model
+            source_text: Source text
+            prompt: Input prompt
+            language_pair: Language pair (e.g., 'en-zh')
+            reference_text: Optional reference translation
+
         Returns:
-            奖励信息字典
+            RewardOutput with total score and component breakdown
+        """
+        try:
+            # 1. Calculate format reward
+            format_result = self.format_reward.calculate(
+                generated_text=generated_text,
+                prompt=prompt
+            )
+            format_score = format_result.score
+
+            # Extract translation content
+            translation = self.format_reward.extract_translation(generated_text)
+
+            # 2. Calculate semantic reward
+            if reference_text is None:
+                reference_text = source_text
+                logger.debug("No reference provided, using source as reference")
+
+            semantic_result = self.semantic_reward.calculate(
+                source=source_text,
+                reference=reference_text,
+                hypothesis=translation if translation else generated_text
+            )
+            semantic_score = semantic_result.score
+
+            # 3. Calculate style reward
+            source_lang, target_lang = language_pair.split('-')
+            source_model_lang = self.language_mapper.get_model_language(source_lang)
+            target_model_lang = self.language_mapper.get_model_language(target_lang)
+
+            if translation:
+                style_result = self.style_reward.calculate(
+                    source_text=source_text,
+                    target_text=translation,
+                    source_lang=source_model_lang,
+                    target_lang=target_model_lang
+                )
+                style_score = style_result.score
+            else:
+                style_score = 0.0
+                style_result = None
+
+            # 4. Combine rewards with penalty for poor format
+            if format_score <= self.FORMAT_THRESHOLD:
+                total_score = -1.0
+                semantic_score = 0.0
+                style_score = 0.0
+                is_valid = False
+                error_msg = f"Format score {format_score:.2f} below threshold {self.FORMAT_THRESHOLD}"
+            else:
+                total_score = (
+                    self.weights.format_weight * format_score +
+                    self.weights.semantic_weight * semantic_score +
+                    self.weights.style_weight * style_score
+                )
+                is_valid = True
+                error_msg = ""
+
+            return RewardOutput(
+                total_score=total_score,
+                components=RewardComponents(
+                    format_score=format_score,
+                    semantic_score=semantic_score,
+                    style_score=style_score
+                ),
+                details={
+                    'format_details': format_result.details,
+                    'semantic_details': semantic_result.details,
+                    'style_details': style_result.details if style_result else {},
+                    'translation': translation
+                },
+                is_valid=is_valid,
+                error_message=error_msg
+            )
+
+        except Exception as e:
+            logger.error(f"Error calculating reward: {e}", exc_info=True)
+            return RewardOutput(
+                total_score=-1.0,
+                components=RewardComponents(0.0, 0.0, 0.0),
+                details={'error': str(e)},
+                is_valid=False,
+                error_message=str(e)
+            )
+
+    def calculate_batch_rewards(
+        self,
+        generated_texts: List[str],
+        source_texts: List[str],
+        prompts: List[str],
+        language_pairs: List[str],
+        reference_texts: Optional[List[str]] = None
+    ) -> List[RewardOutput]:
+        """
+        Calculate rewards for a batch of generations.
+
+        Args:
+            generated_texts: List of generated texts
+            source_texts: List of source texts
+            prompts: List of prompts
+            language_pairs: List of language pairs
+            reference_texts: Optional list of reference translations
+
+        Returns:
+            List of RewardOutput objects
         """
         batch_size = len(generated_texts)
 
-        # 1. 计算格式奖励
-        format_rewards = self.format_reward.batch_calculate_reward(
-            generated_texts, prompts)
+        # Ensure all lists have the same length
+        if not (len(source_texts) == len(prompts) == len(language_pairs) == batch_size):
+            raise ValueError("All input lists must have the same length")
 
-        # 提取翻译内容用于语义奖励计算
-        translations = []
-        for text in generated_texts:
-            translation = self.format_reward.extract_translation(text)
-            translations.append(translation)
+        if reference_texts and len(reference_texts) != batch_size:
+            raise ValueError("Reference texts list must match batch size")
 
-        # 2. 计算语义奖励（使用COMET模型）
-        if reference_texts:
-            # 如果有参考译文，使用参考译文进行COMET计算
-            semantic_rewards = self.semantic_reward.calculate_semantic_reward(
-                source_texts, reference_texts, translations)
-            logger.info(f"使用参考译文进行COMET语义奖励计算，参考文本数量: {len(reference_texts)}")
-        else:
-            # 如果没有参考译文，使用源文本作为参考（降级方案）
-            semantic_rewards = self.semantic_reward.calculate_semantic_reward(
-                source_texts, source_texts, translations)
-            logger.warning("没有提供参考译文，使用源文本作为参考进行COMET计算")
-
-        # 3. 计算风格奖励
-        style_rewards = self._calculate_style_rewards(
-            generated_texts, source_texts, language_pairs)
-
-        # 4. 计算总奖励
-        total_rewards = []
-        reward_details = []
-
+        results = []
         for i in range(batch_size):
-            format_score = format_rewards[i]['total_reward']
-            semantic_score = semantic_rewards[i]
-            style_score = style_rewards[i]['style_score']
+            ref_text = reference_texts[i] if reference_texts else None
+            result = self.calculate_single_reward(
+                generated_text=generated_texts[i],
+                source_text=source_texts[i],
+                prompt=prompts[i],
+                language_pair=language_pairs[i],
+                reference_text=ref_text
+            )
+            results.append(result)
 
-            # 加权求和
-            if format_score <= 0.3:
-                total_score = -1
-                semantic_score = 0
-                style_score = 0
-            else:
-                total_score = (self.format_weight * format_score +
-                               self.semantic_weight * semantic_score +
-                               self.style_weight * style_score)
+        return results
 
-            total_rewards.append(total_score)
-
-            # 详细奖励信息
-            reward_detail = {
-                'format_reward': format_score,
-                'semantic_reward': semantic_score,
-                'style_reward': style_score,
-                'total_reward': total_score,
-                'format_details': format_rewards[i],
-                'style_details': style_rewards[i]
-            }
-            reward_details.append(reward_detail)
-
-        return {
-            'total_rewards': total_rewards,
-            'reward_details': reward_details,
-            'format_rewards': format_rewards,
-            'semantic_rewards': semantic_rewards,
-            'style_rewards': style_rewards
-        }
-
-    def _calculate_style_rewards(self, generated_texts: List[str],
-                                 source_texts: List[str],
-                                 language_pairs: List[str]) -> List[Dict[str, Any]]:
+    def get_statistics(self, rewards: List[RewardOutput]) -> Dict[str, Any]:
         """
-        计算风格奖励
-        
+        Calculate statistics from a list of rewards.
+
         Args:
-            generated_texts: 生成的文本列表
-            source_texts: 源文本列表
-            language_pairs: 语言对列表
-            
+            rewards: List of RewardOutput objects
+
         Returns:
-            风格奖励信息列表
+            Dictionary with statistics
         """
-        style_rewards = []
-
-        for i, (generated_text, source_text, lang_pair) in enumerate(
-                zip(generated_texts, source_texts, language_pairs)):
-
-            # 解析语言对
-            source_lang, target_lang = lang_pair.split('-')
-
-            # 映射语言到模型语言类型
-            lang_map = {
-                'en': 'english',
-                'zh': 'chinese',
-                'de': 'english',  # 德语用英文模型处理
-                'ja': 'chinese'  # 日语用中文模型处理
-            }
-
-            source_model_lang = lang_map.get(source_lang, 'english')
-            target_model_lang = lang_map.get(target_lang, 'chinese')
-
-            # 提取翻译内容
-
-            translation = self.format_reward.extract_translation(generated_text)
-            if not translation:
-                # 如果没有提取到翻译内容，给予惩罚
-                style_rewards.append({
-                    'style_score': 0.0,
-                    'similarity_score': 0.0,
-                    'error': 'No translation extracted',
-                    'source_main_style': 'unknown',
-                    'target_main_style': 'unknown',
-                    'style_match': False
-                })
-                continue
-
-            try:
-                # 计算风格相似度
-                style_result = self.style_reward.calculate_style_similarity(
-                    source_text, translation, source_model_lang, target_model_lang)
-
-                # 风格奖励基于相似度得分
-                style_score = style_result['similarity_score']
-
-                style_rewards.append({
-                    'style_score': style_score,
-                    'similarity_score': style_result['similarity_score'],
-                    'source_main_style': style_result['source_main_style'],
-                    'target_main_style': style_result['target_main_style'],
-                    'style_match': style_result['style_match'],
-                    'style_details': style_result
-                })
-
-            except Exception as e:
-                # 处理错误情况
-                style_rewards.append({
-                    'style_score': 0.0,
-                    'similarity_score': 0.0,
-                    'error': str(e),
-                    'source_main_style': 'unknown',
-                    'target_main_style': 'unknown',
-                    'style_match': False
-                })
-
-        return style_rewards
-
-    def get_reward_statistics(self, reward_history: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """
-        计算奖励统计信息
-        
-        Args:
-            reward_history: 历史奖励列表
-            
-        Returns:
-            统计信息
-        """
-        if not reward_history:
+        if not rewards:
             return {}
 
-        all_rewards = []
-        format_rewards = []
-        style_rewards = []
+        total_scores = [r.total_score for r in rewards]
+        format_scores = [r.components.format_score for r in rewards]
+        semantic_scores = [r.components.semantic_score for r in rewards]
+        style_scores = [r.components.style_score for r in rewards]
 
-        for reward_info in reward_history:
-            for detail in reward_info['reward_details']:
-                all_rewards.append(detail['total_reward'])
-                format_rewards.append(detail['format_reward'])
-                style_rewards.append(detail['style_reward'])
+        valid_count = sum(1 for r in rewards if r.is_valid)
 
-        stats = {
-            'total_reward': {
-                'mean': np.mean(all_rewards),
-                'std': np.std(all_rewards),
-                'min': np.min(all_rewards),
-                'max': np.max(all_rewards)
+        return {
+            'total': {
+                'mean': float(np.mean(total_scores)),
+                'std': float(np.std(total_scores)),
+                'min': float(np.min(total_scores)),
+                'max': float(np.max(total_scores)),
             },
-            'format_reward': {
-                'mean': np.mean(format_rewards),
-                'std': np.std(format_rewards)
+            'format': {
+                'mean': float(np.mean(format_scores)),
+                'std': float(np.std(format_scores)),
             },
-            'style_reward': {
-                'mean': np.mean(style_rewards),
-                'std': np.std(style_rewards)
+            'semantic': {
+                'mean': float(np.mean(semantic_scores)),
+                'std': float(np.std(semantic_scores)),
+            },
+            'style': {
+                'mean': float(np.mean(style_scores)),
+                'std': float(np.std(style_scores)),
+            },
+            'validity': {
+                'valid_count': valid_count,
+                'total_count': len(rewards),
+                'valid_ratio': valid_count / len(rewards)
             }
         }
-
-        return stats
-
-    def clear_cache(self):
-        """清除缓存"""
-        self.source_embedding_cache.clear()

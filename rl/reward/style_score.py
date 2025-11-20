@@ -1,75 +1,100 @@
 """
-风格奖励模块：计算翻译文本的风格一致性
-包括中文BERT和英文BERT模型的风格预测
+Style reward module for calculating translation style consistency.
+Supports Chinese and English BERT models for style prediction.
 """
 
 import torch
 import torch.nn.functional as F
 from transformers import AutoTokenizer
-from typing import Dict, List, Any, Tuple
-import numpy as np
+from typing import Dict, List, Any
+import logging
+
 from style_detector.model.model import StyleDetector
 from .base_reward import StyleRewardBase, RewardResult
 
+logger = logging.getLogger(__name__)
+
 
 class StyleRewardModel(StyleRewardBase):
-    """风格奖励模型"""
+    """Style reward model using BERT-based style detection."""
 
-    def __init__(self, chinese_bert_path: str, english_bert_path: str,
-                 style_types: List[str], device: str = "auto"):
+    def __init__(
+        self,
+        chinese_bert_path: str,
+        english_bert_path: str,
+        style_types: List[str],
+        device: str = "auto"
+    ):
         """
-        初始化风格奖励模型
-        
+        Initialize style reward model.
+
         Args:
-            chinese_bert_path: 中文BERT模型路径
-            english_bert_path: 英文BERT模型路径
-            style_types: 风格类型列表
-            device: 计算设备
+            chinese_bert_path: Path to Chinese BERT checkpoint
+            english_bert_path: Path to English BERT checkpoint
+            style_types: List of style type labels
+            device: Device to use ('auto', 'cpu', or 'cuda')
         """
         self.device = self._get_device(device)
         self.style_types = style_types
         self.num_styles = len(style_types)
 
-        # 加载中文BERT模型和分词器
-        self.chinese_model = self._load_model_from_checkpoint(chinese_bert_path)
-        self.chinese_tokenizer = AutoTokenizer.from_pretrained(self.chinese_model.hparams.model_name)
+        # Load Chinese BERT model and tokenizer
+        self.chinese_model = self._load_model(chinese_bert_path)
+        self.chinese_tokenizer = AutoTokenizer.from_pretrained(
+            self.chinese_model.hparams.model_name
+        )
 
-        # 加载英文BERT模型和分词器
-        self.english_model = self._load_model_from_checkpoint(english_bert_path)
-        self.english_tokenizer = AutoTokenizer.from_pretrained(self.english_model.hparams.model_name)
+        # Load English BERT model and tokenizer
+        self.english_model = self._load_model(english_bert_path)
+        self.english_tokenizer = AutoTokenizer.from_pretrained(
+            self.english_model.hparams.model_name
+        )
+
+        logger.info(f"StyleRewardModel initialized on {self.device}")
 
     def _get_device(self, device: str) -> str:
-        """获取计算设备"""
+        """Determine device to use."""
         if device == "auto":
             return "cuda" if torch.cuda.is_available() else "cpu"
         return device
-        
-    def _load_model_from_checkpoint(self, checkpoint_path: str) -> StyleDetector:
+
+    def _load_model(self, checkpoint_path: str) -> StyleDetector:
         """
-        从checkpoint加载风格检测器模型
-        
+        Load style detector model from checkpoint.
+
         Args:
-            checkpoint_path: 模型checkpoint路径
-            
+            checkpoint_path: Path to model checkpoint
+
         Returns:
-            加载好的StyleDetector模型
+            Loaded StyleDetector model
+
+        Raises:
+            FileNotFoundError: If checkpoint doesn't exist
+            RuntimeError: If model loading fails
         """
-        # 使用StyleDetector的load_from_checkpoint方法加载模型 - 与bert_test2.py保持一致
-        model = StyleDetector.load_from_checkpoint(checkpoint_path)
-        model.eval()
-        model.to(self.device)
-        return model
+        try:
+            model = StyleDetector.load_from_checkpoint(checkpoint_path)
+            model.eval()
+            model.to(self.device)
+            return model
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Model checkpoint not found: {checkpoint_path}")
+        except Exception as e:
+            raise RuntimeError(f"Failed to load model from {checkpoint_path}: {e}")
 
     def predict_style_probabilities(self, text: str, language: str) -> torch.Tensor:
         """
-        预测文本在各种风格上的概率分布
-        
+        Predict style probability distribution for text.
+
         Args:
-            text: 输入文本
-            language: 语言类型
-            
+            text: Input text
+            language: Language identifier ('chinese' or 'english')
+
         Returns:
-            风格概率分布
+            Style probability distribution tensor
+
+        Raises:
+            ValueError: If language is not supported
         """
         if language == 'chinese':
             tokenizer = self.chinese_tokenizer
@@ -78,9 +103,12 @@ class StyleRewardModel(StyleRewardBase):
             tokenizer = self.english_tokenizer
             model = self.english_model
         else:
-            raise ValueError(f"Unsupported language: {language}")
+            raise ValueError(
+                f"Unsupported language: {language}. "
+                f"Supported: 'chinese', 'english'"
+            )
 
-        # 编码文本
+        # Encode text
         encoding = tokenizer(
             text,
             truncation=True,
@@ -88,19 +116,24 @@ class StyleRewardModel(StyleRewardBase):
             max_length=512,
             return_tensors='pt'
         )
-        
+
         input_ids = encoding['input_ids'].to(self.device)
         attention_mask = encoding['attention_mask'].to(self.device)
 
-        # 模型推理 - 与bert_test2.py保持一致
+        # Model inference
         with torch.no_grad():
             logits = model(input_ids, attention_mask)
             probabilities = torch.softmax(logits, dim=-1).squeeze()
 
         return probabilities
 
-    def calculate(self, source_text: str, target_text: str,
-                 source_lang: str, target_lang: str) -> RewardResult:
+    def calculate(
+        self,
+        source_text: str,
+        target_text: str,
+        source_lang: str,
+        target_lang: str
+    ) -> RewardResult:
         """
         Calculate style reward (implements BaseReward interface).
 
@@ -113,11 +146,10 @@ class StyleRewardModel(StyleRewardBase):
         Returns:
             RewardResult with similarity score and details
         """
-        result = self.calculate_similarity(source_text, target_text, source_lang, target_lang)
-        return RewardResult(
-            score=result['similarity_score'],
-            details=result
+        result = self.calculate_similarity(
+            source_text, target_text, source_lang, target_lang
         )
+        return RewardResult(score=result['similarity_score'], details=result)
 
     def batch_calculate(self, batch_data: List[Dict[str, Any]]) -> List[RewardResult]:
         """
@@ -132,66 +164,73 @@ class StyleRewardModel(StyleRewardBase):
         """
         results = []
         for item in batch_data:
-            result = self.calculate(
-                source_text=item['source_text'],
-                target_text=item['target_text'],
-                source_lang=item['source_lang'],
-                target_lang=item['target_lang']
-            )
-            results.append(result)
+            try:
+                result = self.calculate(
+                    source_text=item['source_text'],
+                    target_text=item['target_text'],
+                    source_lang=item['source_lang'],
+                    target_lang=item['target_lang']
+                )
+                results.append(result)
+            except Exception as e:
+                logger.error(f"Error calculating style reward: {e}")
+                results.append(RewardResult(score=0.0, details={'error': str(e)}))
         return results
 
-    def calculate_similarity(self, source_text: str, target_text: str,
-                           source_lang: str, target_lang: str) -> Dict[str, Any]:
+    def calculate_similarity(
+        self,
+        source_text: str,
+        target_text: str,
+        source_lang: str,
+        target_lang: str
+    ) -> Dict[str, Any]:
         """
         Alias for calculate_style_similarity (to match base class interface).
         """
-        return self.calculate_style_similarity(source_text, target_text, source_lang, target_lang)
+        return self.calculate_style_similarity(
+            source_text, target_text, source_lang, target_lang
+        )
 
-    def calculate_style_similarity(self, source_text: str, target_text: str,
-                                   source_lang: str, target_lang: str) -> Dict[str, Any]:
+    def calculate_style_similarity(
+        self,
+        source_text: str,
+        target_text: str,
+        source_lang: str,
+        target_lang: str
+    ) -> Dict[str, Any]:
         """
-        计算源文本和目标文本的风格相似度
-        
+        Calculate style similarity between source and target text.
+
         Args:
-            source_text: 源文本
-            target_text: 目标文本
-            source_lang: 源语言
-            target_lang: 目标语言
-            
+            source_text: Source text
+            target_text: Target text
+            source_lang: Source language
+            target_lang: Target language
+
         Returns:
-            风格相似度信息
+            Dictionary with similarity score and style details
         """
-        # 获取风格概率分布
+        # Get style probability distributions
         source_style_probs = self.predict_style_probabilities(
-            source_text, source_lang)
+            source_text, source_lang
+        )
         target_style_probs = self.predict_style_probabilities(
-            target_text, target_lang)
+            target_text, target_lang
+        )
 
-        # 计算余弦相似度
+        # Calculate cosine similarity
         cosine_similarity = F.cosine_similarity(
-            source_style_probs, target_style_probs, dim=-1).item()
+            source_style_probs, target_style_probs, dim=-1
+        ).item()
 
-        # 获取主要风格类型
+        # Get dominant style types
         source_main_style_idx = torch.argmax(source_style_probs, dim=-1).item()
         target_main_style_idx = torch.argmax(target_style_probs, dim=-1).item()
 
-        # # 计算主要风格概率之差的绝对值
-        # source_main_prob = source_style_probs[source_main_style_idx].item()
-        # target_main_prob = target_style_probs[target_main_style_idx].item()
-        # prob_diff_abs = max(source_main_prob - target_main_prob,0)
-        #
-        # # 添加调节系数：1-（主要风格概率差的绝对值）
-        # # 当主要风格概率差异较大时，系数较小，增强区分度
-        # adjustment_coefficient = 1 - prob_diff_abs
-        #
-        # # 应用调节系数
-        # adjusted_similarity = cosine_similarity * adjustment_coefficient
-
         result = {
             'similarity_score': cosine_similarity,
-            'source_style_probs': source_style_probs.squeeze().cpu().numpy().tolist(),
-            'target_style_probs': target_style_probs.squeeze().cpu().numpy().tolist(),
+            'source_style_probs': source_style_probs.cpu().numpy().tolist(),
+            'target_style_probs': target_style_probs.cpu().numpy().tolist(),
             'source_main_style': self.style_types[source_main_style_idx],
             'target_main_style': self.style_types[target_main_style_idx],
             'style_match': source_main_style_idx == target_main_style_idx
@@ -199,90 +238,78 @@ class StyleRewardModel(StyleRewardBase):
 
         return result
 
-    def batch_calculate_similarity(self, source_texts: List[str],
-                                   target_texts: List[str],
-                                   source_lang: str, target_lang: str) -> List[Dict[str, Any]]:
+    def batch_calculate_similarity(
+        self,
+        source_texts: List[str],
+        target_texts: List[str],
+        source_lang: str,
+        target_lang: str
+    ) -> List[Dict[str, Any]]:
         """
-        批量计算风格相似度
-        
+        Calculate style similarity for batches.
+
         Args:
-            source_texts: 源文本列表
-            target_texts: 目标文本列表
-            source_lang: 源语言
-            target_lang: 目标语言
-            
+            source_texts: List of source texts
+            target_texts: List of target texts
+            source_lang: Source language
+            target_lang: Target language
+
         Returns:
-            相似度信息列表
+            List of similarity result dictionaries
         """
         results = []
         for source_text, target_text in zip(source_texts, target_texts):
             result = self.calculate_style_similarity(
-                source_text, target_text, source_lang, target_lang)
+                source_text, target_text, source_lang, target_lang
+            )
             results.append(result)
         return results
 
 
 class MockStyleRewardModel(StyleRewardBase):
-    """模拟风格奖励模型（用于测试）"""
+    """Mock style reward model for testing without actual BERT models."""
 
     def __init__(self, style_types: List[str]):
         """
-        初始化模拟风格奖励模型
-        
+        Initialize mock style reward model.
+
         Args:
-            style_types: 风格类型列表
+            style_types: List of style type labels
         """
         self.style_types = style_types
         self.num_styles = len(style_types)
+        logger.info("MockStyleRewardModel initialized (test mode)")
 
     def predict_style_probabilities(self, text: str, language: str) -> torch.Tensor:
         """
-        模拟风格概率预测（随机生成）
-        
+        Generate random style probabilities for testing.
+
         Args:
-            text: 输入文本
-            language: 语言类型
-            
+            text: Input text
+            language: Language identifier
+
         Returns:
-            随机生成的风格概率分布
+            Random normalized probability distribution
         """
-        # 随机生成风格概率分布
         random_probs = torch.rand(1, self.num_styles)
-        # 归一化使其成为有效的概率分布
         style_probs = F.softmax(random_probs, dim=-1)
         return style_probs
 
-    def calculate(self, source_text: str, target_text: str,
-                 source_lang: str, target_lang: str) -> RewardResult:
-        """
-        Calculate style reward (implements BaseReward interface).
-
-        Args:
-            source_text: Source text
-            target_text: Target text
-            source_lang: Source language
-            target_lang: Target language
-
-        Returns:
-            RewardResult with similarity score and details
-        """
-        result = self.calculate_similarity(source_text, target_text, source_lang, target_lang)
-        return RewardResult(
-            score=result['similarity_score'],
-            details=result
+    def calculate(
+        self,
+        source_text: str,
+        target_text: str,
+        source_lang: str,
+        target_lang: str
+    ) -> RewardResult:
+        """Calculate mock style reward."""
+        result = self.calculate_similarity(
+            source_text, target_text, source_lang, target_lang
         )
+        return RewardResult(score=result['similarity_score'], details=result)
 
     def batch_calculate(self, batch_data: List[Dict[str, Any]]) -> List[RewardResult]:
-        """
-        Calculate rewards for a batch (implements BaseReward interface).
-
-        Args:
-            batch_data: List of dicts with 'source_text', 'target_text',
-                       'source_lang', 'target_lang' keys
-
-        Returns:
-            List of RewardResult objects
-        """
+        """Calculate mock rewards for batch."""
         results = []
         for item in batch_data:
             result = self.calculate(
@@ -294,35 +321,45 @@ class MockStyleRewardModel(StyleRewardBase):
             results.append(result)
         return results
 
-    def calculate_similarity(self, source_text: str, target_text: str,
-                           source_lang: str, target_lang: str) -> Dict[str, Any]:
-        """
-        Alias for calculate_style_similarity (to match base class interface).
-        """
-        return self.calculate_style_similarity(source_text, target_text, source_lang, target_lang)
+    def calculate_similarity(
+        self,
+        source_text: str,
+        target_text: str,
+        source_lang: str,
+        target_lang: str
+    ) -> Dict[str, Any]:
+        """Alias for calculate_style_similarity."""
+        return self.calculate_style_similarity(
+            source_text, target_text, source_lang, target_lang
+        )
 
-    def calculate_style_similarity(self, source_text: str, target_text: str,
-                                   source_lang: str, target_lang: str) -> Dict[str, Any]:
+    def calculate_style_similarity(
+        self,
+        source_text: str,
+        target_text: str,
+        source_lang: str,
+        target_lang: str
+    ) -> Dict[str, Any]:
         """
-        模拟风格相似度计算
-        
+        Generate mock style similarity.
+
         Args:
-            source_text: 源文本
-            target_text: 目标文本
-            source_lang: 源语言
-            target_lang: 目标语言
-            
+            source_text: Source text
+            target_text: Target text
+            source_lang: Source language
+            target_lang: Target language
+
         Returns:
-            模拟的相似度信息
+            Mock similarity result
         """
-        # 随机生成风格概率分布
+        # Generate random style probabilities
         source_style_probs = self.predict_style_probabilities(source_text, source_lang)
         target_style_probs = self.predict_style_probabilities(target_text, target_lang)
 
-        # 计算余弦相似度（随机值）
-        cosine_similarity = (torch.rand(1).item() * 0.4 + 0.6)  # 0.6-1.0之间的随机值
+        # Random cosine similarity (0.6-1.0 range)
+        cosine_similarity = torch.rand(1).item() * 0.4 + 0.6
 
-        # 获取主要风格类型
+        # Get dominant styles
         source_main_style_idx = torch.argmax(source_style_probs, dim=-1).item()
         target_main_style_idx = torch.argmax(target_style_probs, dim=-1).item()
 
@@ -337,24 +374,18 @@ class MockStyleRewardModel(StyleRewardBase):
 
         return result
 
-    def batch_calculate_similarity(self, source_texts: List[str],
-                                   target_texts: List[str],
-                                   source_lang: str, target_lang: str) -> List[Dict[str, Any]]:
-        """
-        批量计算风格相似度（模拟）
-        
-        Args:
-            source_texts: 源文本列表
-            target_texts: 目标文本列表
-            source_lang: 源语言
-            target_lang: 目标语言
-            
-        Returns:
-            相似度信息列表
-        """
+    def batch_calculate_similarity(
+        self,
+        source_texts: List[str],
+        target_texts: List[str],
+        source_lang: str,
+        target_lang: str
+    ) -> List[Dict[str, Any]]:
+        """Calculate mock style similarity for batches."""
         results = []
         for source_text, target_text in zip(source_texts, target_texts):
             result = self.calculate_style_similarity(
-                source_text, target_text, source_lang, target_lang)
+                source_text, target_text, source_lang, target_lang
+            )
             results.append(result)
         return results

@@ -7,17 +7,14 @@ This module provides a modular reward system with:
 - Style consistency (BERT-based)
 
 Usage:
-    from rl.reward import RewardFactory, load_config
+    from rl.reward import RewardFactory
 
-    config = load_config('config.yaml')
-    reward_manager = RewardFactory.create_from_config(config.to_dict())
+    config = {'reward': {...}, 'model': {...}}
+    reward_manager = RewardFactory.create_from_config(config)
 
     rewards = reward_manager.calculate_batch_rewards(
-        generated_texts=generated_texts,
-        source_texts=source_texts,
-        prompts=prompts,
-        language_pairs=language_pairs,
-        reference_texts=reference_texts
+        generated_texts, source_texts, prompts,
+        language_pairs, reference_texts
     )
 """
 
@@ -31,7 +28,7 @@ from .base_reward import (
 from .format_score import FormatReward
 from .comet_score import CometSemanticReward
 from .style_score import StyleRewardModel, MockStyleRewardModel
-from .reward_manager_v2 import (
+from .reward_manager import (
     RewardManager,
     RewardWeights,
     RewardComponents,
@@ -39,9 +36,6 @@ from .reward_manager_v2 import (
     LanguageMapper
 )
 from .reward_factory import RewardFactory
-
-# Keep backward compatibility with old reward_manager
-from .reward_manager import RewardManager as LegacyRewardManager
 
 __all__ = [
     # Base classes
@@ -57,7 +51,7 @@ __all__ = [
     'StyleRewardModel',
     'MockStyleRewardModel',
 
-    # Reward manager v2
+    # Reward manager
     'RewardManager',
     'RewardWeights',
     'RewardComponents',
@@ -66,7 +60,4 @@ __all__ = [
 
     # Factory
     'RewardFactory',
-
-    # Legacy (for backward compatibility)
-    'LegacyRewardManager',
 ]

@@ -1,49 +1,49 @@
-# 模型配置
+# Model configuration
 model:
   name: "Qwen/Qwen2.5-0.5B-Instruct"
   path: "Qwen/Qwen2.5-0.5B-Instruct"
   device: "auto"  # auto, cpu, cuda
 
-# 训练配置
+# Training configuration
 training:
-  num_generations: 4  # 每个原文生成的结果数量
+  num_generations: 4  # Number of generations per input
   batch_size: 1
   num_epochs: 1
   max_length: 512
-  learning_rate: 1e-5
-  beta: 0.04  # GRPO的KL正则化系数
-  gamma: 1.0  # 奖励折扣因子
+  learning_rate: 1.0e-5
+  beta: 0.04  # GRPO KL regularization coefficient
+  gamma: 1.0  # Reward discount factor
 
-# 奖励模型配置
+# Reward model configuration
 reward:
-  # 风格奖励模型路径
-  chinese_bert_path: 'G:\ECE\ECE684_NLP\final\models\berts\chinese_style_detector_final.ckpt'
-  english_bert_path: 'G:\ECE\ECE684_NLP\final\models\berts\english_style_detector_final.ckpt'
-  
-  # 风格类型 (4种风格,需要更换)
+  # Style reward model paths (use environment variables or relative paths)
+  chinese_bert_path: 'models/berts/chinese_style_detector_final.ckpt'
+  english_bert_path: 'models/berts/english_style_detector_final.ckpt'
+
+  # Style types (must match model training classes)
   style_types: ["law", "literature", "news", "science"]
-  
-  # 奖励权重 (格式: 0.2, 语义: 0.7, 风格: 0.1)
+
+  # Reward weights (format: 1, semantic: 6, style: 4)
   format_reward_weight: 1
   semantic_reward_weight: 6
   style_reward_weight: 4
-  
-  # COMET语义奖励配置
-  comet_model: "wmt22-cometkiwi-da"  # COMET模型名称
-  comet_device: "cpu"  # COMET模型运行设备: cpu, cuda
-  comet_path: 'Z:\model\models--Unbabel--wmt22-cometkiwi-da\snapshots\1ad785194e391eebc6c53e2d0776cada8f83179a\checkpoints\model.ckpt'
 
-  # 模式切换
-  test_mode: false  # true: 测试模式，false: 正式模式
+  # COMET semantic reward configuration
+  comet_model: "wmt22-cometkiwi-da"
+  comet_device: "cpu"  # cpu or cuda
+  comet_path: null  # null to auto-download, or specify path
 
-# 数据配置
+  # Mode toggle (true: use mock models for testing)
+  test_mode: false
+
+# Data configuration
 data:
   train_file: "data/train/train_style.parquet"
   test_file: "data/test/test_style.parquet"
   max_train_samples: 1000
   max_test_samples: 100
 
-# 输出配置
+# Output configuration
 output:
   output_dir: "./outputs"
   logging_steps: 10
