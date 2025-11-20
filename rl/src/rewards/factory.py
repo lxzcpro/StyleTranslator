@@ -8,10 +8,10 @@ from typing import Optional
 from pathlib import Path
 
 from .base import FormatRewardBase, SemanticRewardBase, StyleRewardBase
-from .format_score import FormatReward
-from .comet_score import CometSemanticReward
-from .style_score import StyleRewardModel, MockStyleRewardModel
-from .reward_manager_v2 import RewardManager, RewardWeights, LanguageMapper
+from .format import FormatReward
+from .semantic import CometSemanticReward
+from .style import StyleRewardModel, MockStyleRewardModel
+from .manager import RewardManager, RewardWeights, LanguageMapper
 
 logger = logging.getLogger(__name__)
 

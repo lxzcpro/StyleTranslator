@@ -13,5 +13,7 @@ rl/model
 rl/output
 rl/reward/__pycache__
 rl/reward/.ipynb_checkpoints
+rl/src/__pycache__/
+rl/src/**/__pycache__/
 
 .ipynb_checkpoints.idea/
