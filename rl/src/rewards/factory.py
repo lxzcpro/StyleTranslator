@@ -5,7 +5,6 @@ Implements the Factory pattern for better testability and maintainability.
 
 import logging
 from typing import Optional
-from pathlib import Path
 
 from .base import FormatRewardBase, SemanticRewardBase, StyleRewardBase
 from .format_score import FormatReward
