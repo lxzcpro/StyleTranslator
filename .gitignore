@@ -14,4 +14,4 @@ rl/output
 rl/reward/__pycache__
 rl/reward/.ipynb_checkpoints
 
-.ipynb_checkpoints
+.ipynb_checkpoints.idea/
