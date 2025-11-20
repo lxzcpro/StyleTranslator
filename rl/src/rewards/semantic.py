@@ -2,7 +2,7 @@ import torch
 import logging
 from typing import List, Dict, Optional, Any
 from comet import download_model, load_from_checkpoint
-from .base_reward import SemanticRewardBase, RewardResult
+from .base import SemanticRewardBase, RewardResult
 
 logger = logging.getLogger(__name__)
 

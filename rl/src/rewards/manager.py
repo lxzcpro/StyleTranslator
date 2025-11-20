@@ -6,7 +6,7 @@ from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
 import numpy as np
 
-from .base_reward import FormatRewardBase, SemanticRewardBase, StyleRewardBase
+from .base import FormatRewardBase, SemanticRewardBase, StyleRewardBase
 
 logger = logging.getLogger(__name__)
 

@@ -1,0 +1,23 @@
+# @package _global_
+# Default reward configuration
+
+reward:
+  # Reward weights (sum can be any positive value)
+  format_weight: 1.0
+  semantic_weight: 6.0
+  style_weight: 4.0
+
+  # Style types (must match BERT model training classes)
+  style_types:
+    - law
+    - literature
+    - news
+    - science
+
+  # COMET configuration
+  comet_model: "wmt22-cometkiwi-da"
+  comet_device: cpu
+
+  # Format validation thresholds
+  format_threshold: 0.3  # Minimum format score to avoid penalty
+  min_content_length: 2

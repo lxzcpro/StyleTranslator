@@ -1,11 +1,5 @@
 """
-GRPO Trainer module - Clean, modular training orchestration.
-
-This module provides a cleaner alternative to local_test_demo.py with:
-- Separation of concerns
-- Dependency injection
-- Better error handling
-- Type hints
+GRPO Trainer module - Clean, modular training orchestration with Hydra config support.
 """
 
 import logging
@@ -15,9 +9,9 @@ from pathlib import Path
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from trl import GRPOConfig, GRPOTrainer
+from omegaconF import DictConfig, OmegaConf
 
-from .config_manager import RLConfig, load_config
-from .reward import RewardFactory, RewardManager
+from ..rewards import RewardFactory, RewardManager
 
 logger = logging.getLogger(__name__)
 
@@ -32,14 +26,14 @@ class GRPOStyleTrainer:
 
     def __init__(
         self,
-        config: RLConfig,
+        config: DictConfig,
         reward_manager: Optional[RewardManager] = None
     ):
         """
         Initialize trainer.
 
         Args:
-            config: Configuration object
+            config: Hydra configuration object
             reward_manager: Optional pre-configured reward manager
         """
         self.config = config
@@ -58,10 +52,11 @@ class GRPOStyleTrainer:
 
     def _setup_device(self) -> str:
         """Setup computation device."""
-        if self.config.model.device == "auto":
+        device_config = self.config.get('device', 'auto')
+        if device_config == "auto":
             device = "cuda" if torch.cuda.is_available() else "cpu"
         else:
-            device = self.config.model.device
+            device = device_config
 
         if device == "cuda" and torch.cuda.is_available():
             logger.info(f"Using CUDA device: {torch.cuda.get_device_name(0)}")
@@ -72,7 +67,8 @@ class GRPOStyleTrainer:
 
     def setup_model_and_tokenizer(self) -> None:
         """Load model and tokenizer."""
-        model_path = self.config.model.path
+        model_config = self.config.get('model', {})
+        model_path = model_config.get('path', 'Qwen/Qwen2.5-0.5B-Instruct')
 
         logger.info(f"Loading model from: {model_path}")
 
@@ -98,7 +94,7 @@ class GRPOStyleTrainer:
         if self.reward_manager is None:
             logger.info("Creating reward manager from config")
             self.reward_manager = RewardFactory.create_from_config(
-                self.config.to_dict()
+                OmegaConf.to_container(self.config, resolve=True)
             )
 
     def create_reward_function(self) -> Callable:
@@ -223,18 +219,20 @@ class GRPOStyleTrainer:
 
         # Prepare output directory
         if output_dir is None:
-            output_dir = self.config.output.output_dir
+            output_dir = self.config.get('output', {}).get('output_dir', './outputs')
         Path(output_dir).mkdir(parents=True, exist_ok=True)
 
         # Create GRPO config
+        training = self.config.get('training', {})
+        output_cfg = self.config.get('output', {})
         grpo_config = GRPOConfig(
             output_dir=output_dir,
-            num_train_epochs=self.config.training.num_epochs,
-            per_device_train_batch_size=self.config.training.batch_size,
-            learning_rate=self.config.training.learning_rate,
-            logging_steps=self.config.output.logging_steps,
-            save_steps=self.config.output.save_steps,
-            beta=self.config.training.beta,
+            num_train_epochs=training.get('num_epochs', 1),
+            per_device_train_batch_size=training.get('batch_size', 1),
+            learning_rate=training.get('learning_rate', 1e-5),
+            logging_steps=output_cfg.get('logging_steps', 10),
+            save_steps=output_cfg.get('save_steps', 100),
+            beta=training.get('beta', 0.04),
         )
 
         # Extract prompts from dataset
@@ -256,17 +254,3 @@ class GRPOStyleTrainer:
         logger.info("Starting training...")
         self.trainer.train()
         logger.info("Training completed")
-
-    @classmethod
-    def from_config_file(cls, config_path: str) -> 'GRPOStyleTrainer':
-        """
-        Create trainer from config file.
-
-        Args:
-            config_path: Path to config YAML file
-
-        Returns:
-            GRPOStyleTrainer instance
-        """
-        config = load_config(config_path)
-        return cls(config)

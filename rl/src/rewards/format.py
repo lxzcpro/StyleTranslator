@@ -5,7 +5,7 @@ Checks for required XML tags (<think>, <translate>) and content validity.
 
 import re
 from typing import Dict, Any, List
-from .base_reward import FormatRewardBase, RewardResult
+from .base import FormatRewardBase, RewardResult
 
 
 class FormatReward(FormatRewardBase):

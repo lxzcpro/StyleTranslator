@@ -7,7 +7,7 @@ import logging
 from typing import Optional
 from pathlib import Path
 
-from .base_reward import FormatRewardBase, SemanticRewardBase, StyleRewardBase
+from .base import FormatRewardBase, SemanticRewardBase, StyleRewardBase
 from .format_score import FormatReward
 from .comet_score import CometSemanticReward
 from .style_score import StyleRewardModel, MockStyleRewardModel

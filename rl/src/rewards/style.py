@@ -10,7 +10,7 @@ from typing import Dict, List, Any
 import logging
 
 from style_detector.model.model import StyleDetector
-from .base_reward import StyleRewardBase, RewardResult
+from .base import StyleRewardBase, RewardResult
 
 logger = logging.getLogger(__name__)
 

@@ -1,0 +1,40 @@
+# Main configuration for RL training
+# Use Hydra to compose configs: python scripts/train_rl.py env=local reward=default
+
+defaults:
+  - env: local
+  - reward: default
+  - model: qwen_0.5b
+  - _self_
+
+# Training parameters
+training:
+  num_generations: 4
+  batch_size: 1
+  num_epochs: 1
+  max_length: 512
+  learning_rate: 1.0e-5
+  beta: 0.04  # GRPO KL regularization
+  gamma: 1.0  # Reward discount factor
+
+# Data paths
+data:
+  train_file: "data/train/train_style.parquet"
+  test_file: "data/test/test_style.parquet"
+  max_train_samples: 1000
+  max_test_samples: 100
+
+# Output configuration
+output:
+  output_dir: "./outputs"
+  logging_steps: 10
+  save_steps: 100
+  experiment_name: "style_translation_rl"
+
+# Hydra settings
+hydra:
+  run:
+    dir: outputs/${output.experiment_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: multirun/${output.experiment_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.num}

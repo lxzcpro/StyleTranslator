@@ -1,0 +1,23 @@
+# @package _global_
+# Style-weighted reward configuration (emphasizes style consistency)
+
+reward:
+  # Higher weight on style for style-focused training
+  format_weight: 1.0
+  semantic_weight: 4.0
+  style_weight: 8.0
+
+  # Style types
+  style_types:
+    - law
+    - literature
+    - news
+    - science
+
+  # COMET configuration
+  comet_model: "wmt22-cometkiwi-da"
+  comet_device: cpu
+
+  # Format validation thresholds
+  format_threshold: 0.3
+  min_content_length: 2

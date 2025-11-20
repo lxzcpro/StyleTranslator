@@ -1,65 +1,99 @@
-# RL Module - Style-Aware Translation Training
+# RL Module - Style-Aware Translation with GRPO
 
-Reinforcement Learning module for training translation models with GRPO (Group Relative Policy Optimization) and multi-component reward functions.
+Reinforcement Learning module for training translation models with multi-component rewards using Hydra configuration management.
 
 ## Features
 
-- **Multi-Component Rewards**: Format validation, semantic quality (COMET), and style consistency (BERT)
+- **Multi-Component Rewards**: Format + Semantic (COMET) + Style (BERT)
+- **Hydra Configuration**: Compose configs from modular YAML files
 - **Modular Architecture**: Clean separation with dependency injection
-- **Type-Safe**: Full type hints and dataclasses
-- **Configurable**: YAML-based configuration with environment variable support
-- **Test Mode**: Mock models for development without actual model files
+- **Environment-Specific Configs**: Local development vs production server
+- **Type-Safe**: Full type hints and OmegaConf integration
 
 ## Quick Start
 
 ```bash
 # Install dependencies
-pip install torch transformers trl comet-ml pyyaml
+pip install torch transformers trl comet-ml hydra-core omegaconf
 
 # Train with default config
-python train.py --config config.yaml
+python scripts/train_rl.py
 
-# Train with test mode (no model files needed)
-python train.py --sample-data
+# Train with server environment and style-weighted rewards
+python scripts/train_rl.py env=server reward=style_weighted
+
+# Override specific parameters
+python scripts/train_rl.py training.num_epochs=3 training.learning_rate=1e-4
 ```
 
-## Architecture
+## Project Structure
 
 ```
 rl/
-├── config.yaml           # Configuration
-├── config_manager.py     # Config loading & validation
-├── trainer.py            # GRPO training orchestration
-├── train.py              # CLI entry point
-├── reward/               # Modular reward system
-│   ├── base_reward.py    # Abstract base classes
-│   ├── format_score.py   # XML tag validation
-│   ├── comet_score.py    # Semantic similarity (COMET)
-│   ├── style_score.py    # Style consistency (BERT)
-│   ├── reward_manager.py # Reward orchestration
-│   └── reward_factory.py # Component factory
-└── tests/                # Test suite
+├── configs/                    # Hydra configuration
+│   ├── config.yaml             # Main config (defaults)
+│   ├── env/                    # Environment settings
+│   │   ├── local.yaml
+│   │   └── server.yaml
+│   ├── reward/                 # Reward configurations
+│   │   ├── default.yaml
+│   │   └── style_weighted.yaml
+│   └── model/                  # Model configurations
+│       └── qwen_0.5b.yaml
+│
+├── src/                        # Core source code
+│   ├── rewards/                # Reward system
+│   │   ├── base.py             # Base classes
+│   │   ├── format.py           # Format validation
+│   │   ├── semantic.py         # COMET semantic
+│   │   ├── style.py            # BERT style
+│   │   ├── manager.py          # Reward orchestration
+│   │   └── factory.py          # Component factory
+│   ├── trainer/                # Training logic
+│   │   └── r1_trainer.py       # GRPO trainer
+│   └── utils/                  # Utilities
+│       └── io.py               # I/O helpers
+│
+└── scripts/                    # Entry points
+    └── train_rl.py             # Training script
 ```
 
 ## Configuration
 
-Edit `config.yaml` or use environment variables:
+### Compose Configurations
 
-```yaml
-reward:
-  chinese_bert_path: 'models/berts/chinese_style_detector_final.ckpt'
-  english_bert_path: 'models/berts/english_style_detector_final.ckpt'
-  format_reward_weight: 1
-  semantic_reward_weight: 6
-  style_reward_weight: 4
-  test_mode: false  # true for mock models
+```bash
+# Use different environments
+python scripts/train_rl.py env=local        # Local development
+python scripts/train_rl.py env=server       # Production server
+
+# Use different reward configurations
+python scripts/train_rl.py reward=default          # Balanced rewards
+python scripts/train_rl.py reward=style_weighted   # Emphasize style
+
+# Combine multiple configs
+python scripts/train_rl.py env=server reward=style_weighted
 ```
 
-Environment variables:
+### Override Parameters
+
+```bash
+# Command-line overrides
+python scripts/train_rl.py training.num_epochs=5
+python scripts/train_rl.py reward.format_weight=2.0
+python scripts/train_rl.py device=cuda
+```
+
+### Environment Variables
+
+For production, use environment variables:
+
 ```bash
 export CHINESE_BERT_PATH=/path/to/chinese_bert.ckpt
 export ENGLISH_BERT_PATH=/path/to/english_bert.ckpt
 export COMET_MODEL_PATH=/path/to/comet.ckpt
+
+python scripts/train_rl.py env=server
 ```
 
 ## Usage
@@ -67,111 +101,73 @@ export COMET_MODEL_PATH=/path/to/comet.ckpt
 ### Training
 
 ```python
-from rl.trainer import GRPOStyleTrainer
-from rl.config_manager import load_config
+import hydra
+from omegaconf import DictConfig
+from src.trainer.r1_trainer import GRPOStyleTrainer
 
-config = load_config('config.yaml')
-trainer = GRPOStyleTrainer(config)
-
-dataset = [
-    {
-        'prompt': 'Translate: Hello',
-        'src_text': 'Hello',
-        'tgt_text': '你好',
-        'lang_pair': 'en-zh'
-    }
-]
-
-trainer.train(dataset)
+@hydra.main(config_path="configs", config_name="config")
+def train(cfg: DictConfig):
+    trainer = GRPOStyleTrainer(cfg)
+    dataset = load_your_dataset()
+    trainer.train(dataset)
 ```
 
-### Reward System Only
+### Programmatic API
 
 ```python
-from rl.reward import RewardFactory
+from omegaconf import OmegaConf
+from src.trainer.r1_trainer import GRPOStyleTrainer
+from src.rewards import RewardFactory
 
-config = load_config('config.yaml')
-reward_manager = RewardFactory.create_from_config(config.to_dict())
+# Load config
+cfg = OmegaConf.load('configs/config.yaml')
 
-rewards = reward_manager.calculate_batch_rewards(
-    generated_texts=['<think>...</think><translate>你好</translate>'],
-    source_texts=['Hello'],
-    prompts=['Translate: Hello'],
-    language_pairs=['en-zh'],
-    reference_texts=['你好']
-)
+# Create components
+reward_manager = RewardFactory.create_from_config(OmegaConf.to_container(cfg))
+trainer = GRPOStyleTrainer(cfg, reward_manager=reward_manager)
 
-print(rewards[0].total_score)  # Combined score
-print(rewards[0].components)   # Format, semantic, style breakdown
+# Train
+trainer.train(dataset)
 ```
 
 ## Reward Components
 
-1. **Format Reward** (weight: 1.0)
-   - Validates `<think>` and `<translate>` tags
-   - Checks content validity
+| Component | Default Weight | Description |
+|-----------|----------------|-------------|
+| Format    | 1.0            | XML tag validation (`<think>`, `<translate>`) |
+| Semantic  | 6.0            | COMET translation quality |
+| Style     | 4.0            | BERT style consistency |
 
-2. **Semantic Reward** (weight: 6.0)
-   - Uses COMET model for translation quality
-   - Compares against reference translation
-
-3. **Style Reward** (weight: 4.0)
-   - BERT-based style classification
-   - Cosine similarity between source/target styles
-   - Supports 4 styles: law, literature, news, science
+Customize weights in `configs/reward/*.yaml`.
 
 ## Development
 
 ```bash
-# Run tests
-pytest tests/
+# Run with test mode (mock models)
+python scripts/train_rl.py test_mode=true
 
-# With coverage
-pytest --cov=rl tests/
+# Check configuration
+python scripts/train_rl.py --cfg job
 
-# Format code
-black rl/
+# Print full resolved config
+python scripts/train_rl.py --cfg all
 ```
 
 ## Design Principles
 
-- **SOLID**: Single responsibility, dependency injection, interface segregation
-- **DRY**: No code duplication, shared base classes
-- **Type Safety**: Full type hints, dataclasses for structured data
-- **Robustness**: Comprehensive error handling, validation, logging
+- **Separation of Concerns**: Configs, rewards, training logic are isolated
+- **Composability**: Mix and match environment, reward, model configs
+- **Type Safety**: OmegaConf + type hints throughout
+- **Dependency Injection**: Components receive dependencies, don't create them
+- **Robustness**: Comprehensive error handling and validation
 
-## API Reference
+## Hydra Features
 
-### RewardManager
-
-```python
-class RewardManager:
-    def calculate_single_reward(
-        generated_text: str,
-        source_text: str,
-        prompt: str,
-        language_pair: str,
-        reference_text: Optional[str] = None
-    ) -> RewardOutput
-```
-
-### GRPOStyleTrainer
-
-```python
-class GRPOStyleTrainer:
-    def train(
-        train_dataset: List[Dict[str, Any]],
-        output_dir: Optional[str] = None
-    ) -> None
-```
-
-### RewardFactory
-
-```python
-class RewardFactory:
-    @classmethod
-    def create_from_config(config: dict) -> RewardManager
-```
+- **Config Composition**: Combine multiple YAML files
+- **Command-Line Overrides**: Change any parameter from CLI
+- **Automatic Logging**: Hydra manages output directories
+- **Multi-Run**: Easy hyperparameter sweeps
+- **Interpolation**: Reference other config values
 
 ## License
 
