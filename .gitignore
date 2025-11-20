@@ -14,4 +14,10 @@ rl/output
 rl/reward/__pycache__
 rl/reward/.ipynb_checkpoints
 
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
 .ipynb_checkpoints.idea/
