@@ -58,18 +58,26 @@ class CometSemanticReward(SemanticRewardBase):
             logger.warning("将使用模拟的语义奖励分数")
             self.model = None
 
-    def calculate(self, source: str, reference: str, hypothesis: str) -> RewardResult:
+    def calculate(self, **kwargs) -> RewardResult:
         """
         Calculate semantic reward for single input (implements BaseReward interface).
 
         Args:
-            source: Source text
-            reference: Reference translation
-            hypothesis: Generated translation
+            **kwargs: Must contain 'source', 'reference', 'hypothesis'
 
         Returns:
             RewardResult with score and details
+
+        Raises:
+            KeyError: If required parameters are missing
         """
+        try:
+            source = kwargs['source']
+            reference = kwargs['reference']
+            hypothesis = kwargs['hypothesis']
+        except KeyError as e:
+            raise KeyError(f"Missing required parameter for CometSemanticReward.calculate: {e}")
+
         scores = self.calculate_semantic_reward([source], [reference], [hypothesis])
         return RewardResult(
             score=scores[0],

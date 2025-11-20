@@ -9,7 +9,7 @@ from pathlib import Path
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from trl import GRPOConfig, GRPOTrainer
-from omegaconF import DictConfig, OmegaConf
+from omegaconf import DictConfig, OmegaConf
 
 from ..rewards import RewardFactory, RewardManager
 
@@ -234,9 +234,6 @@ class GRPOStyleTrainer:
             save_steps=output_cfg.get('save_steps', 100),
             beta=training.get('beta', 0.04),
         )
-
-        # Extract prompts from dataset
-        prompts = [item['prompt'] for item in train_dataset]
 
         # Create reward function
         reward_fn = self.create_reward_function()
