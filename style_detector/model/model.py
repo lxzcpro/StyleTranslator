@@ -5,6 +5,7 @@ import pytorch_lightning as pl
 from transformers import AutoModel, AutoConfig
 from torchmetrics import Accuracy, F1Score, Precision, Recall
 from typing import Dict, Any, Optional
+import math
 
 
 class StyleDetector(pl.LightningModule):
@@ -42,7 +43,7 @@ class StyleDetector(pl.LightningModule):
             self.config = AutoConfig.from_pretrained(model_name)
             self.bert = AutoModel.from_pretrained(model_name)
         except Exception as e:
-            raise RuntimeError(f"Failed to load pretrained model '{model_name}': {e}")
+            raise RuntimeError(f"Failed to load pretrained model '{model_name}': {e}") from e
 
         # Validate and freeze layers if specified
         num_bert_layers = len(self.bert.encoder.layer)
@@ -50,6 +51,7 @@ class StyleDetector(pl.LightningModule):
             print(f"Warning: freeze_bert_layers={freeze_bert_layers} exceeds available layers={num_bert_layers}. "
                   f"Freezing all {num_bert_layers} layers.")
             freeze_bert_layers = num_bert_layers
+            self.hparams.freeze_bert_layers = freeze_bert_layers
 
         if freeze_bert_layers > 0:
             self._freeze_bert_layers(freeze_bert_layers)
@@ -220,7 +222,7 @@ class StyleDetector(pl.LightningModule):
                 progress = float(current_step - warmup_steps) / float(
                     max(1, self.hparams.total_training_steps - warmup_steps)
                 )
-                return max(0.0, 0.5 * (1.0 + torch.cos(torch.tensor(progress * 3.141592653589793))))
+                return max(0.0, 0.5 * (1.0 + math.cos(progress * math.pi)))
 
             # If total_training_steps not provided, use linear decay
             # Decay to 0.1 of initial LR over 10x the warmup steps
@@ -255,11 +257,8 @@ class StyleDetector(pl.LightningModule):
             RuntimeError: If prediction fails
         """
         # Validate input
-        if not text or not isinstance(text, str):
+        if not isinstance(text, str) or text.strip() == "":
             raise ValueError("Text must be a non-empty string")
-
-        if text.strip() == "":
-            raise ValueError("Text cannot be empty or whitespace only")
 
         try:
             self.eval()
@@ -287,5 +286,7 @@ class StyleDetector(pl.LightningModule):
                 'predicted_class': pred_class.item(),
                 'probabilities': probs.squeeze().cpu().numpy()
             }
+        except (ValueError, TypeError):
+            raise
         except Exception as e:
             raise RuntimeError(f"Prediction failed: {e}") from e
