@@ -180,7 +180,12 @@ class RewardManager:
             semantic_score = semantic_result.score
 
             # 3. Calculate style reward
-            source_lang, target_lang = language_pair.split('-')
+            # Validate and parse language pair
+            parts = language_pair.split('-')
+            if len(parts) != 2:
+                logger.error(f"Invalid language pair format: {language_pair}. Expected format: 'source-target'")
+                raise ValueError(f"Invalid language pair format: {language_pair}")
+            source_lang, target_lang = parts
             source_model_lang = self.language_mapper.get_model_language(source_lang)
             target_model_lang = self.language_mapper.get_model_language(target_lang)
 

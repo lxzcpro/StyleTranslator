@@ -3,6 +3,8 @@ import torch
 from torch.utils.data import Dataset
 from transformers import AutoTokenizer
 from typing import Dict, List, Tuple
+import tempfile
+import os
 
 
 class StyleDataset(Dataset):
@@ -30,6 +32,9 @@ class StyleDataset(Dataset):
         elif language_filter == 'english':
             self.data = self.data[self.data['language'] == 'en'].reset_index(drop=True)
 
+        # Validate that we have data after filtering
+        if len(self.data) == 0:
+            raise ValueError(f"No data found for language filter: {language_filter}. Check your CSV file and language codes.")
 
         # Create label encoder
         self.unique_styles = sorted(self.data['style'].unique())
@@ -101,6 +106,10 @@ def create_data_splits(
     elif language_filter == 'english':
         data = data[data['language'] == 'en'].reset_index(drop=True)
 
+    # Validate that we have data after filtering
+    if len(data) == 0:
+        raise ValueError(f"No data found for language filter: {language_filter}. Check your CSV file and language codes.")
+
     # Shuffle data
     data = data.sample(frac=1, random_state=42).reset_index(drop=True)
     
@@ -113,15 +122,36 @@ def create_data_splits(
     train_data = data[:n_train]
     val_data = data[n_train:n_train + n_val]
     test_data = data[n_train + n_val:]
-    
-    # Save split data to temporary CSV files
-    train_data.to_csv('/tmp/train_temp.csv', index=False)
-    val_data.to_csv('/tmp/val_temp.csv', index=False)
-    test_data.to_csv('/tmp/test_temp.csv', index=False)
-    
-    # Create datasets
-    train_dataset = StyleDataset('/tmp/train_temp.csv', tokenizer_name, max_length)
-    val_dataset = StyleDataset('/tmp/val_temp.csv', tokenizer_name, max_length)
-    test_dataset = StyleDataset('/tmp/test_temp.csv', tokenizer_name, max_length)
-    
-    return train_dataset, val_dataset, test_dataset
+
+    # Create temporary files with unique names to avoid race conditions
+    # Use delete=False so files persist long enough for StyleDataset to read them
+    train_temp = tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False)
+    val_temp = tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False)
+    test_temp = tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False)
+
+    try:
+        # Save split data to temporary CSV files
+        train_data.to_csv(train_temp.name, index=False)
+        val_data.to_csv(val_temp.name, index=False)
+        test_data.to_csv(test_temp.name, index=False)
+
+        # Close the file handles
+        train_temp.close()
+        val_temp.close()
+        test_temp.close()
+
+        # Create datasets (they will read and store the data)
+        train_dataset = StyleDataset(train_temp.name, tokenizer_name, max_length)
+        val_dataset = StyleDataset(val_temp.name, tokenizer_name, max_length)
+        test_dataset = StyleDataset(test_temp.name, tokenizer_name, max_length)
+
+        return train_dataset, val_dataset, test_dataset
+    finally:
+        # Clean up temporary files
+        for temp_file in [train_temp, val_temp, test_temp]:
+            try:
+                if os.path.exists(temp_file.name):
+                    os.unlink(temp_file.name)
+            except Exception as e:
+                # Log but don't fail if cleanup fails
+                pass
