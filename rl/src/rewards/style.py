@@ -123,7 +123,10 @@ class StyleRewardModel(StyleRewardBase):
         # Model inference
         with torch.no_grad():
             logits = model(input_ids, attention_mask)
-            probabilities = torch.softmax(logits, dim=-1).squeeze()
+            probabilities = torch.softmax(logits, dim=-1)
+            # Only squeeze the batch dimension (dim=0) to maintain consistent shape
+            if probabilities.dim() > 1:
+                probabilities = probabilities.squeeze(0)
 
         return probabilities
 
@@ -295,7 +298,8 @@ class MockStyleRewardModel(StyleRewardBase):
         """
         random_probs = torch.rand(1, self.num_styles)
         style_probs = F.softmax(random_probs, dim=-1)
-        return style_probs
+        # Squeeze batch dimension for consistency with real model
+        return style_probs.squeeze(0)
 
     def calculate(self, **kwargs) -> RewardResult:
         """
@@ -380,8 +384,8 @@ class MockStyleRewardModel(StyleRewardBase):
 
         result = {
             'similarity_score': cosine_similarity,
-            'source_style_probs': source_style_probs.squeeze().cpu().numpy().tolist(),
-            'target_style_probs': target_style_probs.squeeze().cpu().numpy().tolist(),
+            'source_style_probs': source_style_probs.cpu().numpy().tolist() if source_style_probs.dim() == 1 else source_style_probs.squeeze(0).cpu().numpy().tolist(),
+            'target_style_probs': target_style_probs.cpu().numpy().tolist() if target_style_probs.dim() == 1 else target_style_probs.squeeze(0).cpu().numpy().tolist(),
             'source_main_style': self.style_types[source_main_style_idx],
             'target_main_style': self.style_types[target_main_style_idx],
             'style_match': source_main_style_idx == target_main_style_idx

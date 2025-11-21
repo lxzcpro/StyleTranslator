@@ -123,8 +123,12 @@ class GRPOStyleTrainer:
             for prompt in prompts:
                 # Extract source text from prompt
                 if "User:" in prompt:
-                    user_input = prompt.split("User:")[1].split("\n")[0].strip()
-                    src_texts.append(user_input)
+                    parts = prompt.split("User:")
+                    if len(parts) > 1:
+                        user_input = parts[1].split("\n")[0].strip()
+                        src_texts.append(user_input)
+                    else:
+                        src_texts.append("")
                     lang_pairs.append('en-zh')  # TODO: Extract from prompt or config
                 else:
                     src_texts.append("")
@@ -190,11 +194,18 @@ class GRPOStyleTrainer:
         """Log detailed reward information."""
         logger.info("=== Reward Details ===")
         for i, reward in enumerate(rewards):
+            if reward is None:
+                logger.warning(f"Sample {i+1}: No reward (skipped)")
+                continue
+            if not hasattr(reward, 'total_score') or not hasattr(reward, 'components'):
+                logger.warning(f"Sample {i+1}: Invalid reward object")
+                continue
             logger.info(f"Sample {i+1}:")
             logger.info(f"  Total: {reward.total_score:.3f}")
-            logger.info(f"  Format: {reward.components.format_score:.3f}")
-            logger.info(f"  Semantic: {reward.components.semantic_score:.3f}")
-            logger.info(f"  Style: {reward.components.style_score:.3f}")
+            if reward.components is not None:
+                logger.info(f"  Format: {reward.components.format_score:.3f}")
+                logger.info(f"  Semantic: {reward.components.semantic_score:.3f}")
+                logger.info(f"  Style: {reward.components.style_score:.3f}")
             if not reward.is_valid:
                 logger.warning(f"  Invalid: {reward.error_message}")
 

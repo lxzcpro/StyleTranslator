@@ -53,8 +53,21 @@ class CometSemanticReward(SemanticRewardBase):
             self.model.to(self.device)
             self.model.eval()
             logger.info(f"COMET模型加载成功: {self.model_name}")
-        except Exception as e:
+        except FileNotFoundError as e:
+            logger.error(f"COMET模型文件未找到: {e}")
+            logger.warning("将使用模拟的语义奖励分数")
+            self.model = None
+        except (RuntimeError, OSError) as e:
+            # Catch model loading errors but not critical errors
             logger.error(f"加载COMET模型失败: {e}")
+            logger.warning("将使用模拟的语义奖励分数")
+            self.model = None
+        except KeyboardInterrupt:
+            # Re-raise user interrupts
+            raise
+        except Exception as e:
+            # Log unexpected errors with full traceback but don't crash
+            logger.error(f"加载COMET模型时发生意外错误: {e}", exc_info=True)
             logger.warning("将使用模拟的语义奖励分数")
             self.model = None
 
@@ -136,7 +149,7 @@ class CometSemanticReward(SemanticRewardBase):
             # 打印调试信息
             logger.info(
                 f"COMET计算: 源文本数量={len(source_texts)}, 参考译文数量={len(reference_texts)}, 假设译文数量={len(hypothesis_texts)}")
-            if len(source_texts) > 0:
+            if source_texts and reference_texts and hypothesis_texts:
                 logger.info(f"示例 - 源文本: '{source_texts[0][:50]}...'")
                 logger.info(f"示例 - 参考译文: '{reference_texts[0][:50]}...'")
                 logger.info(f"示例 - 假设译文: '{hypothesis_texts[0][:50]}...'")
@@ -149,8 +162,12 @@ class CometSemanticReward(SemanticRewardBase):
             # COMET分数通常在0-1之间，可以直接用作奖励
             semantic_rewards = scores["scores"]
 
-            logger.info(f"语义奖励计算完成，平均分数: {sum(semantic_rewards) / len(semantic_rewards):.3f}")
-            logger.info(f"语义奖励分数详情: {semantic_rewards}")
+            if semantic_rewards:
+                avg_score = sum(semantic_rewards) / len(semantic_rewards)
+                logger.info(f"语义奖励计算完成，平均分数: {avg_score:.3f}")
+                logger.info(f"语义奖励分数详情: {semantic_rewards}")
+            else:
+                logger.warning("语义奖励计算完成，但结果为空")
             return semantic_rewards
 
         except Exception as e:

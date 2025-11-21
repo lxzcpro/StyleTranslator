@@ -4,6 +4,7 @@ Implements the Factory pattern for better testability and maintainability.
 """
 
 import logging
+import os
 from typing import Optional
 
 from .base import FormatRewardBase, SemanticRewardBase, StyleRewardBase
@@ -141,12 +142,32 @@ class RewardFactory:
             device=reward_config.get('comet_device', 'cpu')
         )
 
+        # Validate BERT model paths if not in test mode
+        test_mode = reward_config.get('test_mode', False)
+        chinese_bert_path = reward_config.get('chinese_bert_path', '')
+        english_bert_path = reward_config.get('english_bert_path', '')
+
+        if not test_mode:
+            if not chinese_bert_path:
+                logger.warning("chinese_bert_path not provided in config. Using mock model for style reward.")
+                test_mode = True
+            elif not os.path.exists(chinese_bert_path):
+                logger.warning(f"chinese_bert_path does not exist: {chinese_bert_path}. Using mock model for style reward.")
+                test_mode = True
+
+            if not english_bert_path:
+                logger.warning("english_bert_path not provided in config. Using mock model for style reward.")
+                test_mode = True
+            elif not os.path.exists(english_bert_path):
+                logger.warning(f"english_bert_path does not exist: {english_bert_path}. Using mock model for style reward.")
+                test_mode = True
+
         style_reward = cls.create_style_reward(
-            chinese_bert_path=reward_config.get('chinese_bert_path', ''),
-            english_bert_path=reward_config.get('english_bert_path', ''),
+            chinese_bert_path=chinese_bert_path,
+            english_bert_path=english_bert_path,
             style_types=reward_config.get('style_types', ['law', 'literature', 'news', 'science']),
             device=model_config.get('device', 'auto'),
-            test_mode=reward_config.get('test_mode', False)
+            test_mode=test_mode
         )
 
         # Create reward manager
