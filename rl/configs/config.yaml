@@ -19,8 +19,8 @@ training:
 
 # Data paths
 data:
-  train_file: "data/train/train_style.parquet"
-  test_file: "data/test/test_style.parquet"
+  train_file: "rl/data/train/parquet/train_style.parquet"
+  test_file: "rl/data/test/parquet/test_style.parquet"
   max_train_samples: 1000
   max_test_samples: 100
 

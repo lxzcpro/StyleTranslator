@@ -5,9 +5,9 @@ device: cuda
 
 # Model paths (use environment variables on server)
 model_paths:
-  chinese_bert: ${oc.env:CHINESE_BERT_PATH}
-  english_bert: ${oc.env:ENGLISH_BERT_PATH}
-  comet: ${oc.env:COMET_MODEL_PATH,null}
+  chinese_bert: "/home/users/xz452/workspace/bert_style_detector/models/chinese_style_detector_final.ckpt"
+  english_bert: "/home/users/xz452/workspace/bert_style_detector/models/english_style_detector_final.ckpt"
+  comet: null  # null to auto-download
 
 # Production mode
 test_mode: false

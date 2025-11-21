@@ -15,8 +15,8 @@ reward:
     - science
 
   # COMET configuration
-  comet_model: "wmt22-cometkiwi-da"
-  comet_device: cpu
+  comet_model: "Unbabel/wmt22-cometkiwi-da"
+  comet_device: auto
 
   # Format validation thresholds
   format_threshold: 0.3  # Minimum format score to avoid penalty

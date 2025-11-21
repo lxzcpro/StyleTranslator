@@ -9,29 +9,29 @@ logger = logging.getLogger(__name__)
 
 class CometSemanticReward(SemanticRewardBase):
     """
-    基于COMET模型的语义奖励计算器
-    使用wmt22-cometkiwi-da模型评估翻译质量
+    Semantic reward calculator based on the COMET model.
+    Uses the wmt22-cometkiwi-da model to evaluate translation quality.
     """
 
     def __init__(self, model_name: str = "wmt22-cometkiwi-da",
                  model_path: str = None,
                  device: str = None):
         """
-        初始化COMET语义奖励模型
+        Initialize the COMET semantic reward model.
 
         Args:
-            model_name: COMET模型名称，默认使用wmt22-cometkiwi-da
-            device: 运行设备，None表示自动选择
+            model_name: COMET model name, default is wmt22-cometkiwi-da.
+            device: Device to run on, None for automatic selection.
         """
-        # 自动选择设备
+        # Automatic device selection
         if device is None:
             import torch
             if torch.cuda.is_available():
                 self.device = "cuda"
-                logger.info(f"COMET模型将使用GPU: {torch.cuda.get_device_name()}")
+                logger.info(f"COMET model will use GPU: {torch.cuda.get_device_name()}")
             else:
                 self.device = "cpu"
-                logger.info("COMET模型将使用CPU")
+                logger.info("COMET model will use CPU")
         else:
             self.device = device
 
@@ -41,34 +41,35 @@ class CometSemanticReward(SemanticRewardBase):
         self._load_model()
 
     def _load_model(self):
-        """加载COMET模型"""
+        """Load the COMET model."""
         try:
-            logger.info(f"正在加载COMET模型: {self.model_name}")
-            if self.model_path is None or self.model_path == "None":
-                logger.info("未提供COMET模型路径，将下载模型")
+            logger.info(f"Loading COMET model: {self.model_name}")
+            if not self.model_path or str(self.model_path).lower() == "none":
+                logger.info("No COMET model path provided, downloading model")
                 self.model_path = download_model(self.model_name)
             else:
-                logger.info(f"使用指定的COMET模型路径: {self.model_path}")
+                logger.info(f"Using specified COMET model path: {self.model_path}")
+            
             self.model = load_from_checkpoint(self.model_path)
             self.model.to(self.device)
             self.model.eval()
-            logger.info(f"COMET模型加载成功: {self.model_name}")
+            logger.info(f"COMET model loaded successfully: {self.model_name}")
         except FileNotFoundError as e:
-            logger.error(f"COMET模型文件未找到: {e}")
-            logger.warning("将使用模拟的语义奖励分数")
+            logger.error(f"COMET model file not found: {e}")
+            logger.warning("Will use simulated semantic reward scores")
             self.model = None
         except (RuntimeError, OSError) as e:
             # Catch model loading errors but not critical errors
-            logger.error(f"加载COMET模型失败: {e}")
-            logger.warning("将使用模拟的语义奖励分数")
+            logger.error(f"Failed to load COMET model: {e}")
+            logger.warning("Will use simulated semantic reward scores")
             self.model = None
         except KeyboardInterrupt:
             # Re-raise user interrupts
             raise
         except Exception as e:
             # Log unexpected errors with full traceback but don't crash
-            logger.error(f"加载COMET模型时发生意外错误: {e}", exc_info=True)
-            logger.warning("将使用模拟的语义奖励分数")
+            logger.error(f"Unexpected error while loading COMET model: {e}", exc_info=True)
+            logger.warning("Will use simulated semantic reward scores")
             self.model = None
 
     def calculate(self, **kwargs) -> RewardResult:
@@ -93,7 +94,7 @@ class CometSemanticReward(SemanticRewardBase):
 
         scores = self.calculate_semantic_reward([source], [reference], [hypothesis])
         return RewardResult(
-            score=scores[0],
+            score=scores[0] if scores else 0.0,
             details={'source': source, 'reference': reference, 'hypothesis': hypothesis}
         )
 
@@ -121,23 +122,27 @@ class CometSemanticReward(SemanticRewardBase):
     def calculate_semantic_reward(self, source_texts: List[str], reference_texts: List[str],
                                   hypothesis_texts: List[str]) -> List[float]:
         """
-        计算语义奖励分数
+        Calculate semantic reward scores.
 
         Args:
-            source_texts: 源文本列表
-            reference_texts: 参考译文列表
-            hypothesis_texts: 实际译文列表（模型生成的翻译）
+            source_texts: List of source texts
+            reference_texts: List of reference translations
+            hypothesis_texts: List of actual translations (model generated)
 
         Returns:
-            语义奖励分数列表，范围通常在0-1之间
+            List of semantic reward scores, usually between 0 and 1.
         """
+        if not source_texts or not reference_texts or not hypothesis_texts:
+            logger.warning("Empty input lists provided to calculate_semantic_reward")
+            return []
+
         if not self.model:
-            # 如果模型加载失败，返回模拟分数
-            logger.warning("COMET模型未加载，使用模拟语义奖励分数")
+            # If model failed to load, return simulated scores
+            logger.warning("COMET model not loaded, using simulated semantic reward scores")
             return [0.5 + 0.3 * (hash(h) % 1000) / 1000.0 for h in hypothesis_texts]
 
         try:
-            # 准备COMET输入数据
+            # Prepare COMET input data
             data = []
             for src, ref, hyp in zip(source_texts, reference_texts, hypothesis_texts):
                 data.append({
@@ -146,45 +151,45 @@ class CometSemanticReward(SemanticRewardBase):
                     "mt": hyp
                 })
 
-            # 打印调试信息
+            # Log debug info
             logger.info(
-                f"COMET计算: 源文本数量={len(source_texts)}, 参考译文数量={len(reference_texts)}, 假设译文数量={len(hypothesis_texts)}")
+                f"COMET calculation: source_count={len(source_texts)}, ref_count={len(reference_texts)}, hyp_count={len(hypothesis_texts)}")
             if source_texts and reference_texts and hypothesis_texts:
-                logger.info(f"示例 - 源文本: '{source_texts[0][:50]}...'")
-                logger.info(f"示例 - 参考译文: '{reference_texts[0][:50]}...'")
-                logger.info(f"示例 - 假设译文: '{hypothesis_texts[0][:50]}...'")
+                logger.info(f"Example - Source: '{source_texts[0][:50]}...'")
+                logger.info(f"Example - Reference: '{reference_texts[0][:50]}...'")
+                logger.info(f"Example - Hypothesis: '{hypothesis_texts[0][:50]}...'")
 
-            # 使用COMET模型预测质量分数
+            # Use COMET model to predict quality scores
             with torch.no_grad():
                 gpus = 0 if self.device == "cpu" else 1
                 scores = self.model.predict(data, batch_size=8, gpus=gpus)
 
-            # COMET分数通常在0-1之间，可以直接用作奖励
+            # COMET scores are usually between 0-1, can be used directly as reward
             semantic_rewards = scores["scores"]
 
             if semantic_rewards:
                 avg_score = sum(semantic_rewards) / len(semantic_rewards)
-                logger.info(f"语义奖励计算完成，平均分数: {avg_score:.3f}")
-                logger.info(f"语义奖励分数详情: {semantic_rewards}")
+                logger.info(f"Semantic reward calculation complete, average score: {avg_score:.3f}")
+                logger.info(f"Semantic reward score details: {semantic_rewards}")
             else:
-                logger.warning("语义奖励计算完成，但结果为空")
+                logger.warning("Semantic reward calculation complete but result is empty")
             return semantic_rewards
 
         except Exception as e:
-            logger.error(f"计算语义奖励时出错: {e}")
-            logger.error(f"错误详情: {str(e)}")
-            # 返回中等质量的模拟分数
+            logger.error(f"Error calculating semantic reward: {e}")
+            logger.error(f"Error details: {str(e)}")
+            # Return medium quality simulated scores
             return [0.5] * len(source_texts)
 
     def calculate_batch_reward(self, batch_data: List[Dict]) -> List[float]:
         """
-        批量计算语义奖励
+        Batch calculate semantic rewards.
 
         Args:
-            batch_data: 包含source、reference、hypothesis的字典列表
+            batch_data: List of dictionaries containing source, reference, hypothesis
 
         Returns:
-            语义奖励分数列表
+            List of semantic reward scores
         """
         source_texts = [item['source'] for item in batch_data]
         reference_texts = [item['reference'] for item in batch_data]
@@ -193,7 +198,7 @@ class CometSemanticReward(SemanticRewardBase):
         return self.calculate_semantic_reward(source_texts, reference_texts, hypothesis_texts)
 
     def get_model_info(self) -> Dict:
-        """获取模型信息"""
+        """Get model information."""
         return {
             "model_name": self.model_name,
             "device": str(self.device),

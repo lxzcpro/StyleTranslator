@@ -4,8 +4,8 @@
 reward:
   # Higher weight on style for style-focused training
   format_weight: 1.0
-  semantic_weight: 4.0
-  style_weight: 8.0
+  semantic_weight: 6.0
+  style_weight: 4.0
 
   # Style types
   style_types:
@@ -15,8 +15,8 @@ reward:
     - science
 
   # COMET configuration
-  comet_model: "wmt22-cometkiwi-da"
-  comet_device: cpu
+  comet_model: "Unbabel/wmt22-cometkiwi-da"
+  comet_device: auto
 
   # Format validation thresholds
   format_threshold: 0.3

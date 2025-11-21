@@ -1,19 +1,17 @@
 #!/usr/bin/env python3
 """
-RL training entry point using Hydra for configuration management.
-
-Usage:
-    python scripts/train_rl.py
-    python scripts/train_rl.py env=server reward=style_weighted
-    python scripts/train_rl.py --config-name=config
+RL training entry point.
+Loads real data and handles environment configuration automatically.
 """
 
 import logging
 import sys
+import os
+import pandas as pd
 from pathlib import Path
 
 import hydra
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig, OmegaConf, open_dict  # <--- Added open_dict
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -23,80 +21,108 @@ from src.rewards import RewardFactory
 
 logger = logging.getLogger(__name__)
 
+def load_real_dataset(file_path: str, max_samples: int = None):
+    """
+    Load real training data from Parquet or JSONL.
+    """
+    file_path = Path(file_path)
+    if not file_path.exists():
+        # Fallback for relative paths from project root
+        file_path = Path(__file__).parent.parent.parent / file_path
+        if not file_path.exists():
+            raise FileNotFoundError(f"Dataset file not found: {file_path}")
 
-def load_sample_dataset():
-    """Load a sample dataset for demonstration."""
-    data = [
-        {
-            'src_text': "Siso's depictions of land, water center new gallery exhibition",
-            'tgt_text': '西索画作成为新画廊展览的焦点',
-            'lang_pair': 'en-zh',
-        },
-        {
-            'src_text': '"People Swimming in the Swimming Pool" from 2022 is one Vicente Siso artwork.',
-            'tgt_text': '2022年的《泳池戏水》是维森特·西索的又一作品。',
-            'lang_pair': 'en-zh',
-        },
-    ]
+    logger.info(f"Reading dataset from {file_path}")
+    
+    if file_path.suffix == '.parquet':
+        df = pd.read_parquet(file_path)
+    elif file_path.suffix == '.jsonl':
+        df = pd.read_json(file_path, lines=True)
+    else:
+        raise ValueError(f"Unsupported file format: {file_path.suffix}")
 
-    # Format as prompts
+    # Column mapping logic to handle various dataset formats
+    col_map = {}
+    if 'src_text' in df.columns: col_map['src'] = 'src_text'
+    elif 'source' in df.columns: col_map['src'] = 'source'
+    elif 'src' in df.columns: col_map['src'] = 'src'
+    
+    if 'tgt_text' in df.columns: col_map['tgt'] = 'tgt_text'
+    elif 'target' in df.columns: col_map['tgt'] = 'target'
+    elif 'tgt' in df.columns: col_map['tgt'] = 'tgt'
+
+    if 'src' not in col_map:
+        raise ValueError(f"Could not find source text column. Available: {df.columns.tolist()}")
+
+    # Sampling
+    if max_samples and len(df) > max_samples:
+        df = df.sample(n=max_samples, random_state=42)
+
     formatted_data = []
-    for item in data:
-        prompt = f"""A conversation between User and Assistant. The User asks for a translation from English to Chinese, and the Assistant translates it. The final translation are enclosed within <translate> </translate> tags.
-
-User:{item['src_text']}
-Assistant:"""
+    for _, row in df.iterrows():
+        src = row[col_map['src']]
+        tgt = row.get(col_map.get('tgt'), "") 
+        
+        # Construct Prompt
+        prompt = (
+            "A conversation between User and Assistant. The User asks for a translation from English to Chinese, "
+            "and the Assistant translates it. The final translation is enclosed within <translate> </translate> tags.\n\n"
+            f"User: {src}\n"
+            "Assistant:"
+        )
 
         formatted_data.append({
             'prompt': prompt,
-            'src_text': item['src_text'],
-            'tgt_text': item['tgt_text'],
-            'lang_pair': item['lang_pair'],
+            'src_text': src,
+            'tgt_text': tgt,
+            'lang_pair': row.get('lang_pair', 'en-zh'),
         })
 
     return formatted_data
 
-
 @hydra.main(version_base=None, config_path="../configs", config_name="config")
 def main(cfg: DictConfig) -> None:
-    """
-    Main training function.
-
-    Args:
-        cfg: Hydra configuration
-    """
     # Setup logging
     logging.basicConfig(
         level=getattr(logging, cfg.get('log_level', 'INFO')),
         format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
+    # Suppress verbose logs
+    logging.getLogger("src.rewards.semantic").setLevel(logging.WARNING)
 
     logger.info("=" * 80)
-    logger.info("RL Training with Hydra Configuration")
+    logger.info("RL Training Start")
     logger.info("=" * 80)
-    logger.info(f"\n{OmegaConf.to_yaml(cfg)}")
+
+    with open_dict(cfg):
+        if 'reward' not in cfg:
+            cfg.reward = {}
+        
+        if os.environ.get('CHINESE_BERT_PATH'):
+            logger.info(f"Injecting CHINESE_BERT_PATH from env: {os.environ['CHINESE_BERT_PATH']}")
+            cfg.reward.chinese_bert_path = os.environ['CHINESE_BERT_PATH']
+        
+        if os.environ.get('ENGLISH_BERT_PATH'):
+            logger.info(f"Injecting ENGLISH_BERT_PATH from env: {os.environ['ENGLISH_BERT_PATH']}")
+            cfg.reward.english_bert_path = os.environ['ENGLISH_BERT_PATH']
 
     try:
         # Create reward manager
-        logger.info("Creating reward manager...")
         reward_manager = RewardFactory.create_from_config(OmegaConf.to_container(cfg, resolve=True))
 
         # Create trainer
-        logger.info("Initializing GRPO trainer...")
         trainer = GRPOStyleTrainer(cfg, reward_manager=reward_manager)
 
-        # Load dataset
-        # TODO: Load from cfg.data.train_file
-        logger.info("Loading training dataset...")
-        dataset = load_sample_dataset()
-        logger.info(f"Loaded {len(dataset)} training samples")
+        # Load REAL dataset
+        train_file = cfg.data.get('train_file', 'data/train/train_style.parquet')
+        max_samples = cfg.data.get('max_train_samples', 1000)
+        
+        dataset = load_real_dataset(train_file, max_samples)
+        logger.info(f"Loaded {len(dataset)} training samples from {train_file}")
 
         # Train
-        logger.info("Starting training...")
         trainer.train(dataset)
-
-        logger.info("Training completed successfully!")
 
     except Exception as e:
         logger.error(f"Training failed: {e}", exc_info=True)
