@@ -109,7 +109,7 @@ class StyleDataset(Dataset):
 
             # Additional validation at runtime
             if not text or text.strip() == '':
-                raise ValueError(f"Empty text found at index {idx}")
+                raise IndexError(f"Empty text found at index {idx}")
 
             # Tokenize text
             encoding = self.tokenizer(
@@ -125,6 +125,8 @@ class StyleDataset(Dataset):
                 'attention_mask': encoding['attention_mask'].squeeze(0),
                 'labels': torch.tensor(self.style_to_id[style], dtype=torch.long)
             }
+        except (IndexError, KeyError) as e:
+            raise IndexError(f"Error processing item at index {idx}: {e}") from e
         except Exception as e:
             raise RuntimeError(f"Error processing item at index {idx}: {e}") from e
     
@@ -221,8 +223,8 @@ def create_data_splits(
                 dist = split_data['style'].value_counts(normalize=True).sort_index()
                 print(f"  {split_name}: {dict(dist)}")
 
-        except ImportError:
-            warnings.warn("scikit-learn not installed. Falling back to random splitting.")
+        except (ImportError, ValueError) as e:
+            warnings.warn(f"Stratified splitting failed ({e}). Falling back to random splitting.")
             stratify = False
 
     if not stratify:

@@ -16,14 +16,7 @@ import torch
 
 def set_seed(seed: int = 42):
     """Set random seed for reproducibility"""
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    # Make CUDNN deterministic
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-    # Set PyTorch Lightning seed
+    # PyTorch Lightning's seed_everything handles all seeding needs
     pl.seed_everything(seed, workers=True)
 
 
@@ -75,7 +68,8 @@ def train_model(language: str, config_path: str = 'config.yaml', **overrides):
                 language_filter=language,
                 max_length=model_cfg['max_length'],
                 train_ratio=cfg['data']['train_ratio'],
-                val_ratio=cfg['data']['val_ratio']
+                val_ratio=cfg['data']['val_ratio'],
+                random_state=seed
             )
         except Exception as e:
             raise RuntimeError(f"Failed to create datasets: {e}") from e
@@ -191,6 +185,7 @@ def train_model(language: str, config_path: str = 'config.yaml', **overrides):
 
         print("\nStarting testing...")
         test_results = trainer.test(model, test_loader)
+        print(f"Test results: {test_results}")
 
         # Save final model
         final_path = f"models/{language}_style_detector_final.ckpt"
@@ -217,7 +212,7 @@ def train_model(language: str, config_path: str = 'config.yaml', **overrides):
         # Cleanup wandb if it was initialized
         try:
             wandb.finish()
-        except:
+        except Exception:
             pass
         raise
 
