@@ -203,7 +203,7 @@ class RewardManager:
 
             # 4. Combine rewards with penalty for poor format
             if format_score <= self.FORMAT_THRESHOLD:
-                total_score = -1.0
+                total_score = -3
                 semantic_score = 0.0
                 style_score = 0.0
                 is_valid = False
@@ -211,8 +211,8 @@ class RewardManager:
             else:
                 total_score = (
                     self.weights.format_weight * format_score +
-                    self.weights.semantic_weight * semantic_score +
-                    self.weights.style_weight * style_score
+                    (self.weights.semantic_weight * semantic_score +
+                    self.weights.style_weight * style_score) / 2
                 )
                 is_valid = True
                 error_msg = ""

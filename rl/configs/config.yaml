@@ -9,13 +9,14 @@ defaults:
 
 # Training parameters
 training:
-  num_generations: 4
+  num_generations: 8
   batch_size: 1
   num_epochs: 1
-  max_length: 512
-  learning_rate: 1.0e-5
+  max_length: 1024
+  learning_rate: 1e-4
   beta: 0.04  # GRPO KL regularization
   gamma: 1.0  # Reward discount factor
+  gradient_accumulation_steps: 4
 
 # Data paths
 data:

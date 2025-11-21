@@ -2,6 +2,6 @@
 # Qwen 0.5B model configuration
 
 model:
-  name: "Qwen/Qwen2.5-0.5B-Instruct"
-  path: "Qwen/Qwen2.5-0.5B-Instruct"
+  name: "Qwen/Qwen2.5-1.5B-Instruct"
+  path: "Qwen/Qwen2.5-1.5B-Instruct"
   dtype: auto  # auto, float16, float32, bfloat16

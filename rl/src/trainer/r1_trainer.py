@@ -1,27 +1,27 @@
 """
-GRPO Trainer module - Fixed for Numerical Stability (BF16).
+GRPO Trainer module - Qwen-1.5B Mode.
+Fixed: Indentation of 'train' method and generation_batch_size calculation.
 """
 
 import logging
+import warnings
 from typing import List, Dict, Any, Optional, Callable
 from pathlib import Path
+import numpy as np
 
 import torch
+import wandb
 from datasets import Dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from trl import GRPOConfig, GRPOTrainer
 from omegaconf import DictConfig, OmegaConf
+from peft import LoraConfig, get_peft_model, TaskType
 
 from ..rewards import RewardFactory, RewardManager
 
 logger = logging.getLogger(__name__)
 
-
 class GRPOStyleTrainer:
-    """
-    GRPO trainer for style-aware translation.
-    """
-
     def __init__(
         self,
         config: DictConfig,
@@ -29,7 +29,6 @@ class GRPOStyleTrainer:
     ):
         self.config = config
         self.device = self._setup_device()
-
         self.tokenizer: Optional[AutoTokenizer] = None
         self.model: Optional[AutoModelForCausalLM] = None
         self.reward_manager = reward_manager
@@ -46,22 +45,18 @@ class GRPOStyleTrainer:
 
     def setup_model_and_tokenizer(self) -> None:
         model_config = self.config.get('model', {})
-        model_path = model_config.get('path', 'Qwen/Qwen2.5-0.5B-Instruct')
+        # Default to Qwen 1.5B
+        model_path = model_config.get('path', 'Qwen/Qwen2.5-1.5B-Instruct')
         
         logger.info(f"Loading model from: {model_path}")
-        
         self.tokenizer = AutoTokenizer.from_pretrained(model_path)
-        # Ensure pad token is set to avoid generation warnings/errors
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
 
-        # === FIX: Use bfloat16 to prevent NaN/Inf overflow on Ampere GPUs ===
         if self.device == "cuda" and torch.cuda.is_bf16_supported():
             dtype = torch.bfloat16
-            logger.info("Using bfloat16 for numerical stability")
         else:
             dtype = torch.float16 if self.device == "cuda" else torch.float32
-            logger.info(f"Using {dtype} (bf16 not available)")
             
         device_map = "auto" if self.device == "cuda" else None
 
@@ -69,69 +64,119 @@ class GRPOStyleTrainer:
             model_path,
             torch_dtype=dtype,
             device_map=device_map,
-            # Optional: enable flash attention for speed if using bf16
             attn_implementation="flash_attention_2" if dtype == torch.bfloat16 else None
         )
-        logger.info("Model and tokenizer loaded successfully")
+
+        peft_config = LoraConfig(
+            task_type=TaskType.CAUSAL_LM,
+            inference_mode=False,
+            r=16,
+            lora_alpha=32,
+            lora_dropout=0.05,
+            target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+            bias="none",
+        )
+
+        self.model = get_peft_model(self.model, peft_config)
+        
+        self.model.print_trainable_parameters()
+        
+        logger.info(f"Model loaded with LoRA: {model_path} (dtype: {dtype})")
 
     def setup_reward_manager(self) -> None:
         if self.reward_manager is None:
-            logger.info("Creating reward manager from config")
             self.reward_manager = RewardFactory.create_from_config(
                 OmegaConf.to_container(self.config, resolve=True)
             )
 
     def create_reward_function(self) -> Callable:
-        # Map prompts to metadata for O(1) lookup during training
         prompt_map = {}
         if self.current_dataset:
             for item in self.current_dataset:
                 if 'prompt' in item:
-                    prompt_map[item['prompt']] = {
-                        'src': item.get('src_text', ''),
-                        'ref': item.get('tgt_text', ''),
-                        'lang': item.get('lang_pair', 'en-zh')
-                    }
+                    prompt_map[item['prompt']] = item
+                    prompt_map[item['prompt'].strip()] = item
 
         def reward_fn(prompts: List[str], completions: List[str], **kwargs) -> List[float]:
             src_texts = []
             reference_texts = []
             lang_pairs = []
+            
+            # === RECONSTRUCT FULL XML ===
+            # Prepend <translate> to match the Forced Prefix strategy
+            full_generations = ["<translate>" + c for c in completions]
+            
+            failed_indices = []
 
-            for prompt in prompts:
-                data = prompt_map.get(prompt, {})
-                src_texts.append(data.get('src', ''))
-                reference_texts.append(data.get('ref', ''))
-                lang_pairs.append(data.get('lang', 'en-zh'))
+            for idx, prompt in enumerate(prompts):
+                data = prompt_map.get(prompt)
+                if not data:
+                    data = prompt_map.get(prompt.strip())
+                
+                if not data:
+                    if idx == 0:
+                         logger.warning(f"Prompt lookup failed for prefix: {prompt[:30]}...")
+                    failed_indices.append(idx)
+                    src_texts.append("")
+                    reference_texts.append("")
+                    lang_pairs.append("en-zh")
+                else:
+                    src_texts.append(data.get('src_text', ''))
+                    reference_texts.append(data.get('tgt_text', ''))
+                    lang_pairs.append(data.get('lang_pair', 'en-zh'))
 
             try:
                 rewards = self.reward_manager.calculate_batch_rewards(
-                    generated_texts=completions,
+                    generated_texts=full_generations,
                     source_texts=src_texts,
                     prompts=prompts,
                     language_pairs=lang_pairs,
                     reference_texts=reference_texts
                 )
                 
-                self._log_reward_details(prompts, completions, rewards)
-                return [float(r.total_score) for r in rewards]
+                if wandb.run:
+                    valid_rewards = [r for i, r in enumerate(rewards) if i not in failed_indices]
+                    if valid_rewards:
+                        stats = {
+                            "train/reward_total": np.mean([r.total_score for r in valid_rewards]),
+                            "train/reward_format": np.mean([r.components.format_score for r in valid_rewards]),
+                            "train/reward_semantic": np.mean([r.components.semantic_score for r in valid_rewards]),
+                            "train/reward_style": np.mean([r.components.style_score for r in valid_rewards]),
+                        }
+                        wandb.log(stats)
+
+                self._log_reward_details(prompts, full_generations, rewards)
+                
+                final_scores = []
+                for i, r in enumerate(rewards):
+                    if i in failed_indices:
+                        final_scores.append(0.0)
+                    else:
+                        final_scores.append(float(r.total_score))
+                        
+                return final_scores
 
             except Exception as e:
-                logger.error(f"Error calculating rewards: {e}", exc_info=True)
+                logger.error(f"Error calculating rewards: {e}")
                 return [0.0] * len(completions)
 
         return reward_fn
 
     def _log_reward_details(self, prompts: List[str], completions: List[str], rewards: List[Any]) -> None:
         if not rewards: return
+        
+        preview = completions[0].replace('\n', ' ')[:100]
+        logger.info(f"Eval Text: {preview}")
+        
         r = rewards[0]
         if hasattr(r, 'total_score'):
-            msg = f"Sample Score: {r.total_score:.3f}"
+            msg = f"Score: {r.total_score:.3f}"
             if hasattr(r, 'components') and r.components:
                 c = r.components
-                msg += f" (Fmt: {c.format_score:.2f}, Sem: {c.semantic_score:.2f}, Sty: {c.style_score:.2f})"
-            logger.info(msg)
+                msg += f" | Fmt: {c.format_score:.2f} | Sem: {c.semantic_score:.2f} | Sty: {c.style_score:.2f}"
+            # logger.info(msg)
 
+    # === CRITICAL: Ensure this method is indented at the class level, NOT inside _log_reward_details ===
     def train(self, train_dataset: List[Dict[str, Any]], output_dir: Optional[str] = None) -> None:
         self.setup_model_and_tokenizer()
         self.setup_reward_manager()
@@ -148,34 +193,33 @@ class GRPOStyleTrainer:
         
         num_generations = training_cfg.get('num_generations', 4)
         batch_size = training_cfg.get('batch_size', 1)
-        max_length = training_cfg.get('max_length', 512)
+        max_len = training_cfg.get('max_length', 512)
         
+        # Explicitly calculate generation_batch_size
         generation_batch_size = batch_size * num_generations
-        
-        # Check if we should enable bf16 training
-        use_bf16 = (self.device == "cuda" and torch.cuda.is_bf16_supported())
 
         grpo_config = GRPOConfig(
             output_dir=output_dir,
             num_train_epochs=training_cfg.get('num_epochs', 1),
             per_device_train_batch_size=batch_size,
-            learning_rate=training_cfg.get('learning_rate', 1e-5),
+            learning_rate=training_cfg.get('learning_rate', 1e-6),
             logging_steps=output_cfg.get('logging_steps', 10),
             save_steps=output_cfg.get('save_steps', 100),
             beta=training_cfg.get('beta', 0.04),
-            # GRPO Specifics
             num_generations=num_generations,
-            max_completion_length=max_length,
-            max_prompt_length=max_length,
+            max_completion_length=max_len,
+            max_prompt_length=max_len,
             generation_batch_size=generation_batch_size,
-            # === FIX: Enable BF16 training ===
-            bf16=use_bf16,
-            fp16=not use_bf16, # Fallback to fp16 only if bf16 not supported
+            bf16=(self.device == "cuda" and torch.cuda.is_bf16_supported()),
+            report_to=["wandb"], 
+            gradient_accumulation_steps=training_cfg.get('gradient_accumulation_steps', 1),
+            # use_vllm=False,
+            # vllm_gpu_memory_utilization=0.4, 
+            # vllm_dtype="bfloat16",
         )
 
         reward_fn = self.create_reward_function()
 
-        logger.info(f"Creating GRPO trainer (BF16: {use_bf16})")
         self.trainer = GRPOTrainer(
             model=self.model,
             args=grpo_config,
@@ -184,6 +228,6 @@ class GRPOStyleTrainer:
             train_dataset=hf_dataset,
         )
 
-        logger.info("Starting training...")
+        logger.info("Training started")
         self.trainer.train()
         logger.info("Training completed")

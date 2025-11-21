@@ -12,9 +12,9 @@ class FormatReward(FormatRewardBase):
     """Format validation reward calculator."""
 
     # Reward weights for different components
-    THINK_TAG_WEIGHT = 0.3
-    TRANSLATE_TAG_WEIGHT = 0.4
-    CONTENT_WEIGHT = 0.3
+    THINK_TAG_WEIGHT = 0
+    TRANSLATE_TAG_WEIGHT = 0.5
+    CONTENT_WEIGHT = 0.5
     MIN_CONTENT_LENGTH = 2
 
     def __init__(self):
