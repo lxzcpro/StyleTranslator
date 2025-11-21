@@ -50,8 +50,6 @@ class StyleRewardModel(StyleRewardBase):
             self.english_model.hparams.model_name
         )
 
-        logger.info(f"StyleRewardModel initialized on {self.device}")
-
     def _get_device(self, device: str) -> str:
         """Determine device to use."""
         if device == "auto":
@@ -283,7 +281,6 @@ class MockStyleRewardModel(StyleRewardBase):
         """
         self.style_types = style_types
         self.num_styles = len(style_types)
-        logger.info("MockStyleRewardModel initialized (test mode)")
 
     def predict_style_probabilities(self, text: str, language: str) -> torch.Tensor:
         """
