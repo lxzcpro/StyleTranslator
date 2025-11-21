@@ -16,7 +16,7 @@ training:
   learning_rate: 1e-4
   beta: 0.04  # GRPO KL regularization
   gamma: 1.0  # Reward discount factor
-  gradient_accumulation_steps: 4
+  gradient_accumulation_steps: 1
 
 # Data paths
 data:

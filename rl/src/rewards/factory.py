@@ -55,10 +55,8 @@ class RewardFactory:
         test_mode: bool = False
     ) -> StyleRewardBase:
         if test_mode:
-            logger.info("Creating MockStyleRewardModel (test mode)")
             return MockStyleRewardModel(style_types=style_types)
 
-        logger.info("Creating StyleRewardModel (production mode)")
         # StyleRewardModel handles 'auto' internally, but we can resolve it too
         resolved_device = cls._resolve_device(device)
         return StyleRewardModel(

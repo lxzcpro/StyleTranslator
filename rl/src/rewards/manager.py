@@ -128,13 +128,6 @@ class RewardManager:
         self.weights = weights
         self.language_mapper = language_mapper or LanguageMapper()
 
-        logger.info(
-            f"RewardManager initialized with weights - "
-            f"Format: {weights.format_weight}, "
-            f"Semantic: {weights.semantic_weight}, "
-            f"Style: {weights.style_weight}"
-        )
-
     def calculate_single_reward(
         self,
         generated_text: str,

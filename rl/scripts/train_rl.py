@@ -42,8 +42,6 @@ def load_real_dataset(file_path: str, tokenizer, max_samples: int = None):
         file_path = Path(__file__).parent.parent.parent / file_path
         if not file_path.exists():
             raise FileNotFoundError(f"Dataset file not found: {file_path}")
-
-    logger.info(f"Reading dataset from {file_path}")
     
     if file_path.suffix == '.parquet':
         df = pd.read_parquet(file_path)
@@ -115,13 +113,15 @@ def main(cfg: DictConfig) -> None:
         format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
+    logging.getLogger("transformers").setLevel(logging.WARNING)
 
-    logger.info("=" * 80)
-    logger.info("RL Training Start (Qwen-1.5B Direct Mode)")
-    logger.info("=" * 80)
+    logger.info("Starting RL Training (Qwen-1.5B Direct Mode)")
 
     with open_dict(cfg):
         if 'reward' not in cfg: cfg.reward = {}
+        if 'reward' not in cfg:
+            cfg.reward = {}
+
         if os.environ.get('CHINESE_BERT_PATH'):
             cfg.reward.chinese_bert_path = os.environ['CHINESE_BERT_PATH']
         if os.environ.get('ENGLISH_BERT_PATH'):
