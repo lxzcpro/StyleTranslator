@@ -31,8 +31,6 @@ def load_real_dataset(file_path: str, max_samples: int = None):
         file_path = Path(__file__).parent.parent.parent / file_path
         if not file_path.exists():
             raise FileNotFoundError(f"Dataset file not found: {file_path}")
-
-    logger.info(f"Reading dataset from {file_path}")
     
     if file_path.suffix == '.parquet':
         df = pd.read_parquet(file_path)
@@ -90,21 +88,18 @@ def main(cfg: DictConfig) -> None:
     )
     # Suppress verbose logs
     logging.getLogger("src.rewards.semantic").setLevel(logging.WARNING)
+    logging.getLogger("transformers").setLevel(logging.WARNING)
 
-    logger.info("=" * 80)
-    logger.info("RL Training Start")
-    logger.info("=" * 80)
+    logger.info("Starting RL Training")
 
     with open_dict(cfg):
         if 'reward' not in cfg:
             cfg.reward = {}
-        
+
         if os.environ.get('CHINESE_BERT_PATH'):
-            logger.info(f"Injecting CHINESE_BERT_PATH from env: {os.environ['CHINESE_BERT_PATH']}")
             cfg.reward.chinese_bert_path = os.environ['CHINESE_BERT_PATH']
-        
+
         if os.environ.get('ENGLISH_BERT_PATH'):
-            logger.info(f"Injecting ENGLISH_BERT_PATH from env: {os.environ['ENGLISH_BERT_PATH']}")
             cfg.reward.english_bert_path = os.environ['ENGLISH_BERT_PATH']
 
     try:

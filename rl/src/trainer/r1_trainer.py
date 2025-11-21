@@ -47,9 +47,7 @@ class GRPOStyleTrainer:
     def setup_model_and_tokenizer(self) -> None:
         model_config = self.config.get('model', {})
         model_path = model_config.get('path', 'Qwen/Qwen2.5-0.5B-Instruct')
-        
-        logger.info(f"Loading model from: {model_path}")
-        
+
         self.tokenizer = AutoTokenizer.from_pretrained(model_path)
         # Ensure pad token is set to avoid generation warnings/errors
         if self.tokenizer.pad_token is None:
@@ -58,11 +56,9 @@ class GRPOStyleTrainer:
         # === FIX: Use bfloat16 to prevent NaN/Inf overflow on Ampere GPUs ===
         if self.device == "cuda" and torch.cuda.is_bf16_supported():
             dtype = torch.bfloat16
-            logger.info("Using bfloat16 for numerical stability")
         else:
             dtype = torch.float16 if self.device == "cuda" else torch.float32
-            logger.info(f"Using {dtype} (bf16 not available)")
-            
+
         device_map = "auto" if self.device == "cuda" else None
 
         self.model = AutoModelForCausalLM.from_pretrained(
@@ -72,11 +68,10 @@ class GRPOStyleTrainer:
             # Optional: enable flash attention for speed if using bf16
             attn_implementation="flash_attention_2" if dtype == torch.bfloat16 else None
         )
-        logger.info("Model and tokenizer loaded successfully")
+        logger.info(f"Model loaded: {model_path} (dtype: {dtype})")
 
     def setup_reward_manager(self) -> None:
         if self.reward_manager is None:
-            logger.info("Creating reward manager from config")
             self.reward_manager = RewardFactory.create_from_config(
                 OmegaConf.to_container(self.config, resolve=True)
             )
@@ -175,7 +170,6 @@ class GRPOStyleTrainer:
 
         reward_fn = self.create_reward_function()
 
-        logger.info(f"Creating GRPO trainer (BF16: {use_bf16})")
         self.trainer = GRPOTrainer(
             model=self.model,
             args=grpo_config,
@@ -184,6 +178,6 @@ class GRPOStyleTrainer:
             train_dataset=hf_dataset,
         )
 
-        logger.info("Starting training...")
+        logger.info("Training started")
         self.trainer.train()
         logger.info("Training completed")

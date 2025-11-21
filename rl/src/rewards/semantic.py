@@ -28,10 +28,8 @@ class CometSemanticReward(SemanticRewardBase):
             import torch
             if torch.cuda.is_available():
                 self.device = "cuda"
-                logger.info(f"COMET model will use GPU: {torch.cuda.get_device_name()}")
             else:
                 self.device = "cpu"
-                logger.info("COMET model will use CPU")
         else:
             self.device = device
 
@@ -43,17 +41,12 @@ class CometSemanticReward(SemanticRewardBase):
     def _load_model(self):
         """Load the COMET model."""
         try:
-            logger.info(f"Loading COMET model: {self.model_name}")
             if not self.model_path or str(self.model_path).lower() == "none":
-                logger.info("No COMET model path provided, downloading model")
                 self.model_path = download_model(self.model_name)
-            else:
-                logger.info(f"Using specified COMET model path: {self.model_path}")
-            
+
             self.model = load_from_checkpoint(self.model_path)
             self.model.to(self.device)
             self.model.eval()
-            logger.info(f"COMET model loaded successfully: {self.model_name}")
         except FileNotFoundError as e:
             logger.error(f"COMET model file not found: {e}")
             logger.warning("Will use simulated semantic reward scores")
@@ -151,14 +144,6 @@ class CometSemanticReward(SemanticRewardBase):
                     "mt": hyp
                 })
 
-            # Log debug info
-            logger.info(
-                f"COMET calculation: source_count={len(source_texts)}, ref_count={len(reference_texts)}, hyp_count={len(hypothesis_texts)}")
-            if source_texts and reference_texts and hypothesis_texts:
-                logger.info(f"Example - Source: '{source_texts[0][:50]}...'")
-                logger.info(f"Example - Reference: '{reference_texts[0][:50]}...'")
-                logger.info(f"Example - Hypothesis: '{hypothesis_texts[0][:50]}...'")
-
             # Use COMET model to predict quality scores
             with torch.no_grad():
                 gpus = 0 if self.device == "cpu" else 1
@@ -167,11 +152,7 @@ class CometSemanticReward(SemanticRewardBase):
             # COMET scores are usually between 0-1, can be used directly as reward
             semantic_rewards = scores["scores"]
 
-            if semantic_rewards:
-                avg_score = sum(semantic_rewards) / len(semantic_rewards)
-                logger.info(f"Semantic reward calculation complete, average score: {avg_score:.3f}")
-                logger.info(f"Semantic reward score details: {semantic_rewards}")
-            else:
+            if not semantic_rewards:
                 logger.warning("Semantic reward calculation complete but result is empty")
             return semantic_rewards
 
