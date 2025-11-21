@@ -17,7 +17,8 @@ class StyleDetector(pl.LightningModule):
         learning_rate: float = 2e-5,
         warmup_steps: int = 500,
         dropout_rate: float = 0.1,
-        freeze_bert_layers: int = 0
+        freeze_bert_layers: int = 0,
+        total_training_steps: int = None
     ):
         """
         Args:
@@ -27,15 +28,29 @@ class StyleDetector(pl.LightningModule):
             warmup_steps: Number of warmup steps for scheduler
             dropout_rate: Dropout rate for classification head
             freeze_bert_layers: Number of BERT layers to freeze (0 = no freezing)
+            total_training_steps: Total number of training steps (for scheduler)
         """
         super().__init__()
         self.save_hyperparameters()
-        
+
+        # Validate freeze_bert_layers parameter
+        if freeze_bert_layers < 0:
+            raise ValueError(f"freeze_bert_layers must be >= 0, got {freeze_bert_layers}")
+
         # Load pretrained BERT
-        self.config = AutoConfig.from_pretrained(model_name)
-        self.bert = AutoModel.from_pretrained(model_name)
-        
-        # Freeze layers if specified
+        try:
+            self.config = AutoConfig.from_pretrained(model_name)
+            self.bert = AutoModel.from_pretrained(model_name)
+        except Exception as e:
+            raise RuntimeError(f"Failed to load pretrained model '{model_name}': {e}")
+
+        # Validate and freeze layers if specified
+        num_bert_layers = len(self.bert.encoder.layer)
+        if freeze_bert_layers > num_bert_layers:
+            print(f"Warning: freeze_bert_layers={freeze_bert_layers} exceeds available layers={num_bert_layers}. "
+                  f"Freezing all {num_bert_layers} layers.")
+            freeze_bert_layers = num_bert_layers
+
         if freeze_bert_layers > 0:
             self._freeze_bert_layers(freeze_bert_layers)
         
@@ -46,12 +61,16 @@ class StyleDetector(pl.LightningModule):
         # Loss function
         self.criterion = nn.CrossEntropyLoss()
         
-        # Metrics
-        self.train_accuracy = Accuracy(task="multiclass", num_classes=num_classes,top_k=1)
-        self.val_accuracy = Accuracy(task="multiclass", num_classes=num_classes,top_k=1)
-        self.val_f1 = F1Score(task="multiclass", num_classes=num_classes, average='macro',top_k=1)
-        self.val_precision = Precision(task="multiclass", num_classes=num_classes, average='macro',top_k=1)
-        self.val_recall = Recall(task="multiclass", num_classes=num_classes, average='macro',top_k=1)
+        # Metrics (top_k is not needed for multiclass classification)
+        self.train_accuracy = Accuracy(task="multiclass", num_classes=num_classes)
+        self.val_accuracy = Accuracy(task="multiclass", num_classes=num_classes)
+        self.val_f1 = F1Score(task="multiclass", num_classes=num_classes, average='macro')
+        self.val_precision = Precision(task="multiclass", num_classes=num_classes, average='macro')
+        self.val_recall = Recall(task="multiclass", num_classes=num_classes, average='macro')
+
+        # Reusable test metrics to avoid recreating them each epoch
+        self.test_accuracy = Accuracy(task="multiclass", num_classes=num_classes)
+        self.test_f1 = F1Score(task="multiclass", num_classes=num_classes, average='macro')
 
         self.test_step_outputs = []
         
@@ -153,7 +172,7 @@ class StyleDetector(pl.LightningModule):
         """Calculate test metrics at epoch end"""
         # Retrieve stored outputs
         outputs = self.test_step_outputs
-        
+
         if not outputs:
             return
 
@@ -161,41 +180,56 @@ class StyleDetector(pl.LightningModule):
         all_preds = torch.cat([x['preds'] for x in outputs])
         all_labels = torch.cat([x['labels'] for x in outputs])
         all_losses = torch.stack([x['loss'] for x in outputs])
-        
-        # Calculate metrics
+
+        # Calculate metrics using reusable metric objects
         test_loss = all_losses.mean()
-        test_acc = Accuracy(task="multiclass", num_classes=self.hparams.num_classes).to(self.device)(all_preds, all_labels)
-        test_f1 = F1Score(task="multiclass", num_classes=self.hparams.num_classes, average='macro').to(self.device)(all_preds, all_labels)
-        
+        test_acc = self.test_accuracy(all_preds, all_labels)
+        test_f1 = self.test_f1(all_preds, all_labels)
+
         # Log metrics
         self.log('test_loss', test_loss)
         self.log('test_acc', test_acc)
         self.log('test_f1', test_f1)
-        
+
         print(f"\nTest Results:")
         print(f"Loss: {test_loss:.4f}")
         print(f"Accuracy: {test_acc:.4f}")
         print(f"F1 Score: {test_f1:.4f}")
-        
+
         # Clear the list to free memory
         self.test_step_outputs.clear()
     
     def configure_optimizers(self):
-        """Configure optimizers and schedulers"""
+        """Configure optimizers and schedulers with proper warmup and decay"""
         optimizer = torch.optim.AdamW(
             self.parameters(),
             lr=self.hparams.learning_rate,
             weight_decay=0.01
         )
-        
-        # Linear warmup scheduler
+
+        # Improved warmup scheduler with cosine decay after warmup
         def lr_lambda(current_step):
-            if current_step < self.hparams.warmup_steps:
-                return float(current_step) / float(max(1, self.hparams.warmup_steps))
-            return 1.0
-        
+            warmup_steps = self.hparams.warmup_steps
+
+            # Linear warmup
+            if current_step < warmup_steps:
+                return float(current_step) / float(max(1, warmup_steps))
+
+            # Cosine decay after warmup
+            if self.hparams.total_training_steps is not None:
+                progress = float(current_step - warmup_steps) / float(
+                    max(1, self.hparams.total_training_steps - warmup_steps)
+                )
+                return max(0.0, 0.5 * (1.0 + torch.cos(torch.tensor(progress * 3.141592653589793))))
+
+            # If total_training_steps not provided, use linear decay
+            # Decay to 0.1 of initial LR over 10x the warmup steps
+            decay_steps = max(warmup_steps * 10, 1000)
+            progress = min(1.0, float(current_step - warmup_steps) / float(decay_steps))
+            return max(0.1, 1.0 - 0.9 * progress)
+
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
-        
+
         return {
             'optimizer': optimizer,
             'lr_scheduler': {
@@ -208,36 +242,50 @@ class StyleDetector(pl.LightningModule):
     def predict_style(self, text: str, tokenizer) -> Dict[str, Any]:
         """
         Predict style for a single text
-        
+
         Args:
             text: Input text
             tokenizer: Tokenizer instance
-        
+
         Returns:
             Dictionary with prediction and probabilities
+
+        Raises:
+            ValueError: If text is empty or None
+            RuntimeError: If prediction fails
         """
-        self.eval()
-        
-        # Tokenize
-        encoding = tokenizer(
-            text,
-            truncation=True,
-            padding='max_length',
-            max_length=512,
-            return_tensors='pt'
-        )
-        
-        # Move to device
-        input_ids = encoding['input_ids'].to(self.device)
-        attention_mask = encoding['attention_mask'].to(self.device)
-        
-        # Predict
-        with torch.no_grad():
-            logits = self(input_ids, attention_mask)
-            probs = F.softmax(logits, dim=-1)
-            pred_class = torch.argmax(logits, dim=-1)
-        
-        return {
-            'predicted_class': pred_class.item(),
-            'probabilities': probs.squeeze().cpu().numpy()
-        }
+        # Validate input
+        if not text or not isinstance(text, str):
+            raise ValueError("Text must be a non-empty string")
+
+        if text.strip() == "":
+            raise ValueError("Text cannot be empty or whitespace only")
+
+        try:
+            self.eval()
+
+            # Tokenize
+            encoding = tokenizer(
+                text,
+                truncation=True,
+                padding='max_length',
+                max_length=512,
+                return_tensors='pt'
+            )
+
+            # Move to device
+            input_ids = encoding['input_ids'].to(self.device)
+            attention_mask = encoding['attention_mask'].to(self.device)
+
+            # Predict
+            with torch.no_grad():
+                logits = self(input_ids, attention_mask)
+                probs = F.softmax(logits, dim=-1)
+                pred_class = torch.argmax(logits, dim=-1)
+
+            return {
+                'predicted_class': pred_class.item(),
+                'probabilities': probs.squeeze().cpu().numpy()
+            }
+        except Exception as e:
+            raise RuntimeError(f"Prediction failed: {e}") from e

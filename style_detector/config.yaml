@@ -4,7 +4,7 @@ chinese:
   max_length: 512
   batch_size: 16
   learning_rate: 2.0e-5
-  warmup_steps: 10
+  warmup_steps: 500  # Increased from 10 to 500 for better training stability
   dropout_rate: 0.1
   freeze_bert_layers: 10
 
@@ -14,7 +14,7 @@ english:
   max_length: 512
   batch_size: 16
   learning_rate: 2.0e-5
-  warmup_steps: 10
+  warmup_steps: 500  # Increased from 10 to 500 for better training stability
   dropout_rate: 0.1
   freeze_bert_layers: 10
 
