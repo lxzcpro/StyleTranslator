@@ -1,0 +1,16 @@
+# @package _global_
+# Server/production environment settings
+
+device: cuda
+
+# Model paths (use environment variables on server)
+model_paths:
+  chinese_bert: "/home/users/xz452/workspace/bert_style_detector/models/chinese_style_detector_final.ckpt"
+  english_bert: "/home/users/xz452/workspace/bert_style_detector/models/english_style_detector_final.ckpt"
+  comet: null  # null to auto-download
+
+# Production mode
+test_mode: false
+
+# Logging level
+log_level: INFO
