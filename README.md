@@ -92,39 +92,6 @@ python scripts/train_rl.py training.num_epochs=5 device=cuda
 
 Customize in `rl/configs/reward/*.yaml`.
 
-## Configuration
-
-### Environment-Specific
-
-```bash
-# Local development
-python scripts/train_rl.py env=local
-
-# Production server (uses environment variables)
-export CHINESE_BERT_PATH=/path/to/model.ckpt
-export ENGLISH_BERT_PATH=/path/to/model.ckpt
-python scripts/train_rl.py env=server
-```
-
-### Reward Presets
-
-- `default.yaml`: Balanced (format=1, semantic=6, style=4)
-- `style_weighted.yaml`: Style-focused (format=1, semantic=4, style=8)
-
-## Development
-
-```bash
-# Run tests
-cd rl
-pytest tests/
-
-# Check configuration
-python scripts/train_rl.py --cfg job
-
-# Print resolved config
-python scripts/train_rl.py --cfg all
-```
-
 ## Requirements
 
 - Python 3.8+
